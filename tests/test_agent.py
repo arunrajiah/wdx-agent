@@ -113,5 +113,89 @@ class Ndjson(unittest.TestCase):
         self.assertEqual(list(agent.read_ndjson(s, out[-1][0])), [])
 
 
+class BatDetect2(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.out = Path(self.tmp) / "results"
+        self.out.mkdir()
+        call = lambda cls, p, t: {"class": cls, "class_prob": p, "det_prob": 0.9, "start_time": t, "end_time": t + 0.005,
+                                  "low_freq": 40000, "high_freq": 80000, "event": "Echolocation", "individual": "-1"}
+        (self.out / "20260930_213000.WAV.json").write_text(json.dumps({
+            "id": "20260930_213000.WAV", "duration": 5.0, "time_exp": 1, "annotated": False, "class_name": "Pipistrellus pipistrellus",
+            "annotation": [call("Pipistrellus pipistrellus", 0.81, 1.20), call("Pipistrellus pipistrellus", 0.93, 1.31),
+                           call("Pipistrellus pipistrellus", 0.40, 1.42),   # below min_confidence
+                           call("Myotis daubentonii", 0.88, 3.00),          # a single call: below min_calls
+                           call("Nyctalus noctula", 0.75, 0.50), call("Nyctalus noctula", 0.79, 0.62)],
+        }))
+        (self.out / "notes.json").write_text(json.dumps({"something": "else"}))
+
+    def test_groups_calls_into_one_event_per_species(self):
+        s = settings(self.tmp, "batdetect2", str(self.out), "latitude = 51.5072\nlongitude = -0.1276\n")
+        out = list(agent.read_batdetect2(s, None))
+        names = [ev["detection"]["scientificName"] for _, ev in out]
+        self.assertEqual(names, ["Nyctalus noctula", "Pipistrellus pipistrellus"])
+        pip = out[1][1]
+        self.assertEqual(pip["detection"]["confidence"], 0.93)
+        self.assertEqual(pip["detection"]["classifier"]["name"], "BatDetect2")
+        self.assertEqual(pip["source"]["system"], "batdetect2")
+        self.assertEqual(pip["media"], {"mediaType": "audio", "fileName": "20260930_213000.WAV"})
+        # recording start comes from the file name (UTC), plus the offset of the first call
+        self.assertEqual(pip["eventStart"], "2026-09-30T21:30:01+00:00")
+        self.assertEqual((pip["deployment"]["latitude"], pip["deployment"]["longitude"]), (51.51, -0.13))
+
+    def test_does_not_resend_a_file(self):
+        s = settings(self.tmp, "batdetect2", str(self.out), "latitude = 51.5\nlongitude = -0.1\n")
+        cursor = list(agent.read_batdetect2(s, None))[-1][0]
+        self.assertEqual(list(agent.read_batdetect2(s, cursor)), [])
+
+
+class CsvSource(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.f = Path(self.tmp) / "id.csv"
+        self.f.write_text(
+            "IN FILE,DATE,TIME,AUTO ID,MATCH RATIO\n"
+            "a.wav,2026-09-30,21:30:05,EPTFUS,0.92\n"
+            "b.wav,2026-09-30,21:31:10,NoID,0.00\n"
+            "c.wav,2026-09-30,21:35:40,MYOLUC,0.40\n"
+            "d.wav,not a date,xx,EPTFUS,0.9\n"
+            "e.wav,2026-09-30,22:02:00,LASBOR,0.85\n")
+        (Path(self.tmp) / "codes.csv").write_text("EPTFUS,Eptesicus fuscus\nMYOLUC,Myotis lucifugus\nLASBOR,Lasiurus borealis\n")
+        self.extra = ("latitude = 40.0\nlongitude = -75.0\nclassifier = Kaleidoscope Pro\nsensor_model = Song Meter Mini Bat\n"
+                      "csv_species = AUTO ID\ncsv_confidence = MATCH RATIO\ncsv_date = DATE\ncsv_time = TIME\n"
+                      "csv_datetime_format = %Y-%m-%d %H:%M:%S\ncsv_file = IN FILE\n"
+                      f"csv_species_map = {self.tmp}/codes.csv\n")
+
+    def test_maps_columns_and_codes_and_skips_bad_rows(self):
+        s = settings(self.tmp, "csv", str(self.f), self.extra)
+        out = list(agent.read_csv(s, None))
+        self.assertEqual(len(out), 5)                      # every row moves the cursor
+        events = [ev for _, ev in out if ev]
+        self.assertEqual([e["detection"]["scientificName"] for e in events], ["Eptesicus fuscus", "Lasiurus borealis"])
+        e = events[0]
+        self.assertEqual(e["source"]["system"], "other")
+        self.assertEqual(e["detection"]["classifier"]["name"], "Kaleidoscope Pro")
+        self.assertEqual(e["deployment"]["sensorModel"], "Song Meter Mini Bat")
+        self.assertEqual(e["media"]["fileName"], "a.wav")
+        self.assertRegex(e["eventStart"], r"^2026-09-30T21:30:05[+-]\d\d:\d\d$")
+
+    def test_cursor_resumes_after_appended_rows(self):
+        s = settings(self.tmp, "csv", str(self.f), self.extra)
+        cursor = list(agent.read_csv(s, None))[-1][0]
+        self.assertEqual(list(agent.read_csv(s, cursor)), [])
+        with open(self.f, "a") as fh:
+            fh.write("f.wav,2026-09-30,23:00:00,EPTFUS,0.99\n")
+        more = [ev for _, ev in agent.read_csv(s, cursor) if ev]
+        self.assertEqual(len(more), 1)
+
+    def test_confidence_scale(self):
+        f = Path(self.tmp) / "pct.csv"
+        f.write_text("species,when,score\nPipistrellus pipistrellus,2026-09-30T21:30:05+01:00,87\n")
+        s = settings(self.tmp, "csv", str(f), "latitude = 51\nlongitude = 0\ncsv_species = species\ncsv_datetime = when\ncsv_confidence = score\ncsv_confidence_scale = 100\n")
+        ev = [ev for _, ev in agent.read_csv(s, None) if ev][0]
+        self.assertEqual(ev["detection"]["confidence"], 0.87)
+        self.assertEqual(ev["eventStart"], "2026-09-30T21:30:05+01:00")
+
+
 if __name__ == "__main__":
     unittest.main()
