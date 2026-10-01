@@ -28,6 +28,10 @@ Send the wildlife detections your device already makes to an open, global map.
 
 ## Quick start
 
+> **Already on BirdWeather?** If your station uploads to BirdWeather (a PUC, or BirdNET-Pi or BirdNET-Go with BirdWeather enabled), it is already included in WildNetwork. Do not install the agent as well, or the same detections will be counted twice.
+
+New to all this, or choosing what to build? Start with the step by step guide: https://wildnetwork.arunrajiah.com/contribute
+
 On a Raspberry Pi that already runs BirdNET-Pi or BirdNET-Go:
 
 ```bash
