@@ -78,7 +78,7 @@ You need two things: something that detects animals, and this agent to share wha
 curl -fsSL https://wildnetwork.arunrajiah.com/agent/install.sh | WDX_SOURCE=birdnet-go WDX_PATH=/path/to/birdnet.db bash
 ```
 
-The agent reads the `notes` table. BirdNET-Go's newer v2 datastore is not supported yet, see the open issues.
+The agent reads both BirdNET-Go datastores: the newer one (`detections` table) and the older one (`notes` table). After BirdNET-Go migrates an old database, detections that were already sent keep their ids, so nothing is counted twice. Detections BirdNET-Go marks as unlikely for your location, and non-species labels such as noise, are skipped.
 
 ### Camera trap with SpeciesNet
 

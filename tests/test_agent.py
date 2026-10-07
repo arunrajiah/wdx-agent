@@ -83,6 +83,36 @@ class BirdnetGo(unittest.TestCase):
         self.assertEqual(ev["media"], {"mediaType": "audio", "fileName": "x.wav"})
 
 
+class BirdNetGoV2(unittest.TestCase):
+    def test_reads_detections_table(self):
+        tmp = tempfile.mkdtemp()
+        db = f"{tmp}/birdnet.db"
+        con = sqlite3.connect(db)
+        con.executescript(
+            "CREATE TABLE ai_models (id INTEGER PRIMARY KEY, name TEXT, version TEXT);"
+            "CREATE TABLE label_types (id INTEGER PRIMARY KEY, name TEXT);"
+            "CREATE TABLE labels (id INTEGER PRIMARY KEY, scientific_name TEXT, model_id INTEGER, label_type_id INTEGER);"
+            "CREATE TABLE detections (id INTEGER PRIMARY KEY, model_id INTEGER, label_id INTEGER, detected_at INTEGER, confidence REAL,"
+            " latitude REAL, longitude REAL, clip_name TEXT, unlikely NUMERIC DEFAULT 0, legacy_id INTEGER);"
+            "INSERT INTO ai_models VALUES (1, 'BirdNET', '2.4');"
+            "INSERT INTO label_types VALUES (1, 'species'), (2, 'noise');"
+            "INSERT INTO labels VALUES (1, 'Turdus migratorius', 1, 1), (2, 'Engine', 1, 2);"
+            "INSERT INTO detections VALUES (1, 1, 1, 1791392364, 0.9, 42.36, -71.06, 'clips/a.wav', 0, 77),"
+            " (2, 1, 2, 1791392400, 0.95, 42.36, -71.06, NULL, 0, NULL),"
+            " (3, 1, 1, 1791392500, 0.9, 42.36, -71.06, NULL, 1, NULL),"
+            " (4, 1, 1, 1791392600, 0.92, 42.36, -71.06, NULL, 0, NULL);"
+        )
+        con.close()
+        s = settings(tmp, "birdnet-go", db, "latitude = 42.36\nlongitude = -71.06\n")
+        out = list(agent.read_birdnet_go(s, None))
+        self.assertEqual([c for c, _ in out], [{"d": 1}, {"d": 2}, {"d": 3}, {"d": 4}])
+        events = [e for _, e in out if e]
+        self.assertEqual([e["eventId"] for e in events], ["birdnet-go:station1:77", "birdnet-go:station1:d4"])
+        self.assertEqual(events[0]["eventStart"], "2026-10-07T16:59:24Z")
+        self.assertEqual(events[0]["detection"]["classifier"], {"name": "BirdNET", "version": "2.4"})
+        self.assertEqual(list(agent.read_birdnet_go(s, {"d": 4})), [])
+
+
 class SpeciesNet(unittest.TestCase):
     def test_skips_blank_and_low_confidence(self):
         tmp = tempfile.mkdtemp()

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (2026-10-07)
+
+- BirdNET-Go: reads the current datastore (`detections`, `labels`, `ai_models`); the old `notes` table still works. Migrated detections keep their old event ids. Detections flagged unlikely and non-species labels are skipped.
+
 ## 0.2.0 (2026-10-02)
 
 - New source `batdetect2`: bat detectors. Reads BatDetect2 result files and groups calls into one event per species per recording.
