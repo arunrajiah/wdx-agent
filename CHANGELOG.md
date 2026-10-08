@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 (2026-10-08)
+
+- Health reports are sent even when the source cannot be read yet (for example no coordinates set); the queue count is then left out.
+
 ## 0.3.0 (2026-10-08)
 
 - Health reports: with `device_id` set, the agent sends a WDX device-status record (storage, temperature, uptime, queue, battery via `battery_command`) every `status_interval_seconds`.
