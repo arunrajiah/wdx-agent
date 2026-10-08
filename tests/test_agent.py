@@ -113,6 +113,29 @@ class BirdNetGoV2(unittest.TestCase):
         self.assertEqual(list(agent.read_birdnet_go(s, {"d": 4})), [])
 
 
+class StatusAndPickup(unittest.TestCase):
+    def test_status_record_and_cursor_helpers(self):
+        tmp = tempfile.mkdtemp()
+        db = f"{tmp}/birds.db"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, date TEXT, time TEXT, scientific_name TEXT, common_name TEXT, "
+                    "confidence REAL, latitude REAL, longitude REAL, clip_name TEXT)")
+        for i in range(3):
+            con.execute("INSERT INTO notes (date,time,scientific_name,common_name,confidence,latitude,longitude,clip_name) "
+                        "VALUES ('2026-10-01','07:01:10','Psittacula krameri','Rose-ringed Parakeet',0.9,0,0,NULL)")
+        con.commit()
+        con.close()
+        s = settings(tmp, "birdnet-go", db, "latitude = 12.97\nlongitude = 77.59\ndevice_id = wnb_test\n"
+                     "battery_command = echo '{\"percent\": 81, \"volts\": 13.1, \"other\": 1}'\n")
+        st = agent.collect_status(s)
+        self.assertEqual((st["kind"], st["deviceId"], st["queue"]["pending"]), ("device-status", "wnb_test", 3))
+        self.assertEqual(st["battery"], {"percent": 81, "volts": 13.1})
+        self.assertTrue(s.status_endpoint.endswith("/api/v1/devices/status"))
+        batch = agent.pending_batch(s)
+        agent.save_cursor(s, batch[1][0])
+        self.assertEqual(len(agent.pending_batch(s)), 1)
+
+
 class SpeciesNet(unittest.TestCase):
     def test_skips_blank_and_low_confidence(self):
         tmp = tempfile.mkdtemp()

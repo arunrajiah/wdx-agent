@@ -220,6 +220,12 @@ Then install [wdx-agent.service](wdx-agent.service) into `/etc/systemd/system/`,
 | `media_base_url` | empty | If your clips are publicly reachable, the URL prefix to link them. |
 | `license` | CC BY 4.0 | License you grant on the detections you share. |
 | `state_file` | `~/.wdx-agent-state.json` | Where the agent remembers what it already sent. |
+| `device_id` | empty | Id from the WildNetwork device registry. When set, the agent also sends a health report (WDX device status). |
+| `status_interval_seconds` | `900` | How often the health report is sent. |
+| `status_endpoint` | the `endpoint` with `/events` replaced by `/devices/status` | Where health reports go. |
+| `battery_command` | empty | Optional command that prints JSON such as `{"percent": 81, "volts": 13.1, "charging": true}`, for devices with a battery monitor. |
+
+The health report holds free storage, CPU temperature, uptime, detections waiting to be sent, the agent version, and the battery when `battery_command` is set. It contains no detections and no location.
 
 ## Privacy
 

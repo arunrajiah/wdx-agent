@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 (2026-10-08)
+
+- Health reports: with `device_id` set, the agent sends a WDX device-status record (storage, temperature, uptime, queue, battery via `battery_command`) every `status_interval_seconds`.
+- Helpers `pending_batch`, `save_cursor` and `collect_status` for the WildNetwork Base, which lets a phone carry detections out when there is no internet.
+
 ## 0.2.1 (2026-10-07)
 
 - BirdNET-Go: reads the current datastore (`detections`, `labels`, `ai_models`); the old `notes` table still works. Migrated detections keep their old event ids. Detections flagged unlikely and non-species labels are skipped.
