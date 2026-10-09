@@ -5,3 +5,12 @@ __pycache__/
 *.db
 state*.json
 .DS_Store
+
+# Local AI assistant / OS / env files
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.mcp.json
+.env
+.env.*
+!.env.example
