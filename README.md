@@ -282,7 +282,7 @@ Eight open source projects for listening to, identifying and mapping wildlife. T
 
 **How this one fits.** wdx-agent is the uploader. It runs on the station you already have (and inside every WildNetwork Base) and sends WDX to WildNetwork or any other WDX endpoint.
 
-**How they connect:** stations (a WildNetwork Base, BirdNET-Pi, BirdNET-Go, camera traps) produce detections; wdx-agent sends them in the WDX format, SpeciesNet Studio adds a human check for camera traps, and WildNetwork maps them. Connected today: wdx-agent, the WildNetwork Base and SpeciesNet Studio send to WildNetwork, BirdEcho shows WildNetwork arrivals near your station, and WildEcho uses wildecho-api. Planned: Base setup in BirdEcho, and sending WildEcho identifications to WildNetwork.
+**How they connect:** stations (a WildNetwork Base, BirdNET-Pi, BirdNET-Go, camera traps) produce detections; wdx-agent sends them in the WDX format, SpeciesNet Studio adds a human check for camera traps, and WildNetwork maps them. Connected today: wdx-agent, the WildNetwork Base, SpeciesNet Studio and WildEcho (if you switch sharing on) send to WildNetwork, BirdEcho shows WildNetwork arrivals near your station, and WildEcho uses wildecho-api. Planned: Base setup in BirdEcho.
 
 ## Contributing and governance
 
