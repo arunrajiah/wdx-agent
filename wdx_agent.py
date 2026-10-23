@@ -82,7 +82,7 @@ class Settings:
         self.filename_timezone = a.get("filename_timezone", "utc").lower()
         self.min_calls = a.getint("min_calls", fallback=2)
         self.csv = {k[4:]: v for k, v in a.items() if k.startswith("csv_")}
-        # Device health (WDX device-status): sent when device_id is set, from the WildNetwork device registry.
+        # Device health (WDX device-status): sent when device_id is set, from the Wildlife Network device registry.
         self.device_id = a.get("device_id", "")
         self.status_endpoint = a.get("status_endpoint", "") or self.endpoint.rsplit("/events", 1)[0] + "/devices/status"
         self.status_interval = a.getint("status_interval_seconds", fallback=900)
@@ -427,7 +427,7 @@ def load_state(s: Settings) -> dict:
 
 
 def save_cursor(s: Settings, cursor) -> None:
-    """Advance the source cursor. Also used by the WildNetwork Base after a phone has carried a batch out."""
+    """Advance the source cursor. Also used by the Wildlife Network Base after a phone has carried a batch out."""
     state = load_state(s)
     state[state_key(s)] = cursor
     tmp = s.state_path + ".tmp"

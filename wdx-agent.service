@@ -1,5 +1,5 @@
 [Unit]
-Description=wdx-agent: push wildlife detections to WildNetwork
+Description=wdx-agent: push wildlife detections to Wildlife Network
 After=network-online.target
 Wants=network-online.target
 

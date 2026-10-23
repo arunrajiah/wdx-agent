@@ -41,7 +41,7 @@ Checklist for a new source:
 5. A test in `tests/test_agent.py` that builds a tiny fixture and checks the mapping.
 6. A section in the README under "Capture setups".
 
-The server only issues keys for known source names. Open an issue first so the name can be added on the WildNetwork side.
+The server only issues keys for known source names. Open an issue first so the name can be added on the Wildlife Network side.
 
 ## Pull requests
 
