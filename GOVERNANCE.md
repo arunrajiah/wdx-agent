@@ -26,6 +26,6 @@ Semantic versioning. The `VERSION` constant in `wdx_agent.py`, a git tag, and an
 
 ## Relationship to WildNetwork
 
-WildNetwork (https://wildnetwork.arunrajiah.com) is the hosted map and data service that this agent sends to by default. It is a separate project by the same author. The agent and the WDX format are open so that station owners are never locked in: you can point the agent at your own server at any time by changing `endpoint`.
+WildNetwork (https://wlnw.org) is the hosted map and data service that this agent sends to by default. It is a separate project by the same author. The agent and the WDX format are open so that station owners are never locked in: you can point the agent at your own server at any time by changing `endpoint`.
 
 The names "wdx-agent", "WDX" and "WildNetwork" identify these projects. Forks are welcome under the license, but please use a different name for a modified distribution.

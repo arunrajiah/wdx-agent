@@ -37,7 +37,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 BATCH = 500
 
 
@@ -57,7 +57,7 @@ class Settings:
         if not cp.read(path):
             sys.exit(f"config not found: {path}")
         a = cp["agent"]
-        self.endpoint = a.get("endpoint", "https://wildnetwork.arunrajiah.com/api/v1/events")
+        self.endpoint = a.get("endpoint", "https://wlnw.org/api/v1/events")
         self.api_key = a.get("api_key", "")
         self.source = a.get("source", "birdnet-pi")
         self.path = os.path.expanduser(a.get("path", ""))

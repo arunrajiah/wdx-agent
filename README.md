@@ -2,7 +2,7 @@
 
 Send the wildlife detections your device already makes to an open, global map.
 
-`wdx-agent` is a small, free program for a Raspberry Pi (or any Linux or macOS machine). It reads detections from BirdNET-Pi, BirdNET-Go, a camera trap classifier, or a bat detector, converts them to the open [WDX](https://github.com/arunrajiah/wildlife-detection-exchange) format, and pushes them to [WildNetwork](https://wildnetwork.arunrajiah.com) or any other WDX endpoint.
+`wdx-agent` is a small, free program for a Raspberry Pi (or any Linux or macOS machine). It reads detections from BirdNET-Pi, BirdNET-Go, a camera trap classifier, or a bat detector, converts them to the open [WDX](https://github.com/arunrajiah/wildlife-detection-exchange) format, and pushes them to [WildNetwork](https://wlnw.org) or any other WDX endpoint.
 
 - One Python file. Standard library only. No pip, no Docker.
 - Works offline: it catches up by itself when the network returns.
@@ -33,12 +33,12 @@ Send the wildlife detections your device already makes to an open, global map.
 
 > **Already on BirdWeather?** If your station uploads to BirdWeather (a PUC, or BirdNET-Pi or BirdNET-Go with BirdWeather enabled), it is already included in WildNetwork. Do not install the agent as well, or the same detections will be counted twice.
 
-New to all this, or choosing what to build? Start with the step by step guide: https://wildnetwork.arunrajiah.com/contribute
+New to all this, or choosing what to build? Start with the step by step guide: https://wlnw.org/contribute
 
 On a Raspberry Pi that already runs BirdNET-Pi or BirdNET-Go:
 
 ```bash
-curl -fsSL https://wildnetwork.arunrajiah.com/agent/install.sh | bash
+curl -fsSL https://wlnw.org/agent/install.sh | bash
 ```
 
 The installer:
@@ -77,7 +77,7 @@ You need two things: something that detects animals, and this agent to share wha
 **Share:** run the quick start command. If the installer cannot find the database, tell it where it is:
 
 ```bash
-curl -fsSL https://wildnetwork.arunrajiah.com/agent/install.sh | WDX_SOURCE=birdnet-go WDX_PATH=/path/to/birdnet.db bash
+curl -fsSL https://wlnw.org/agent/install.sh | WDX_SOURCE=birdnet-go WDX_PATH=/path/to/birdnet.db bash
 ```
 
 The agent reads both BirdNET-Go datastores: the newer one (`detections` table) and the older one (`notes` table). After BirdNET-Go migrates an old database, detections that were already sent keep their ids, so nothing is counted twice. Detections BirdNET-Go marks as unlikely for your location, and non-species labels such as noise, are skipped.
@@ -96,7 +96,7 @@ python -m speciesnet.scripts.run_model --folders /data/camtrap/2026-10 --predict
 **Share:** point the agent at the folder that holds the `predictions.json` files. Camera traps have no GPS in the file the agent reads, so give the location:
 
 ```bash
-curl -fsSL https://wildnetwork.arunrajiah.com/agent/install.sh | WDX_SOURCE=speciesnet WDX_PATH=/data/camtrap WDX_LAT=11.41 WDX_LON=76.69 bash
+curl -fsSL https://wlnw.org/agent/install.sh | WDX_SOURCE=speciesnet WDX_PATH=/data/camtrap WDX_LAT=11.41 WDX_LON=76.69 bash
 ```
 
 The agent skips blanks, humans and vehicles, and anything below `min_confidence`. The event time is the image file's modification time, so keep timestamps when copying (`cp -p`, `rsync -t`). One agent serves one location: for several cameras, run one config per camera with its own coordinates.
@@ -117,7 +117,7 @@ batdetect2 detect /data/bats/2026-09-30 /data/bats/results 0.3
 **Share:** point the agent at the results folder and give the detector's location.
 
 ```bash
-curl -fsSL https://wildnetwork.arunrajiah.com/agent/install.sh | WDX_SOURCE=batdetect2 WDX_PATH=/data/bats/results WDX_LAT=51.51 WDX_LON=-0.13 bash
+curl -fsSL https://wlnw.org/agent/install.sh | WDX_SOURCE=batdetect2 WDX_PATH=/data/bats/results WDX_LAT=51.51 WDX_LON=-0.13 bash
 ```
 
 How the agent treats bat data:
@@ -190,7 +190,7 @@ sudo mkdir -p /opt/wdx-agent
 sudo curl -fsSL https://raw.githubusercontent.com/arunrajiah/wdx-agent/main/wdx_agent.py -o /opt/wdx-agent/wdx_agent.py
 
 # get a device key (shown once)
-curl -X POST https://wildnetwork.arunrajiah.com/api/v1/register \
+curl -X POST https://wlnw.org/api/v1/register \
   -H 'content-type: application/json' \
   -d '{"name":"my-garden","source":"birdnet-pi"}'
 
@@ -207,7 +207,7 @@ Then install [wdx-agent.service](wdx-agent.service) into `/etc/systemd/system/`,
 
 | Key | Default | Meaning |
 |---|---|---|
-| `endpoint` | `https://wildnetwork.arunrajiah.com/api/v1/events` | Where events are sent. Any WDX endpoint works. |
+| `endpoint` | `https://wlnw.org/api/v1/events` | Where events are sent. Any WDX endpoint works. |
 | `api_key` | none | Device key from registration. Tied to one `source`. |
 | `source` | `birdnet-pi` | `birdnet-pi`, `birdnet-go`, `speciesnet`, `batdetect2`, `csv` or `ndjson`. |
 | `path` | none | Database file, predictions folder, or NDJSON file. |
@@ -271,7 +271,7 @@ Eight open source projects for listening to, identifying and mapping wildlife. T
 
 | I want to | Use | What it is |
 |---|---|---|
-| See where birds and wildlife are moving, or download the data | [WildNetwork](https://github.com/arunrajiah/wildnetwork) | The live map and open data: [wildnetwork.arunrajiah.com](https://wildnetwork.arunrajiah.com) |
+| See where birds and wildlife are moving, or download the data | [WildNetwork](https://github.com/arunrajiah/wildnetwork) | The live map and open data: [wlnw.org](https://wlnw.org) |
 | Build a monitoring station from open hardware | [WildNetwork Base](https://github.com/arunrajiah/wildnetwork-base) | Software and a ready-to-flash SD card image (beta) for the open WildNetwork station (Raspberry Pi, microphone, solar) |
 | Share detections from a BirdNET-Pi, BirdNET-Go, camera trap or bat detector you already have | [wdx-agent](https://github.com/arunrajiah/wdx-agent) (this project) | One small program that sends your station's detections. BirdWeather stations are already included and need nothing |
 | Follow your own station on your phone | [BirdEcho](https://github.com/arunrajiah/birdecho) | Android app for BirdNET-Pi, BirdNET-Go and BirdWeather stations |

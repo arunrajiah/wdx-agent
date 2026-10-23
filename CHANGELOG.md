@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2 (2026-10-23)
+
+- WildNetwork moved to wlnw.org: the default endpoint and installer now use https://wlnw.org. Agents already installed keep working, because wildnetwork.arunrajiah.com still accepts uploads; to switch, set `endpoint = https://wlnw.org/api/v1/events` in /etc/wdx-agent.ini or reinstall.
+
 ## 0.3.1 (2026-10-08)
 
 - Health reports are sent even when the source cannot be read yet (for example no coordinates set); the queue count is then left out.

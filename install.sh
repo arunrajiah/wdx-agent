@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # wdx-agent installer for Raspberry Pi / Linux.
-#   curl -fsSL https://wildnetwork.arunrajiah.com/agent/install.sh | bash
+#   curl -fsSL https://wlnw.org/agent/install.sh | bash
 # Detects BirdNET-Pi or BirdNET-Go, registers a device key, and installs a systemd service.
 # Override anything with env vars: WDX_SOURCE, WDX_PATH, WDX_LAT, WDX_LON, WDX_NAME, WDX_KEY, WDX_BASE.
 set -euo pipefail
 
-BASE="${WDX_BASE:-https://wildnetwork.arunrajiah.com}"
+BASE="${WDX_BASE:-https://wlnw.org}"
 CONF=/etc/wdx-agent.ini
 RUN_USER="${SUDO_USER:-$USER}"
 HOME_DIR="$(eval echo "~$RUN_USER")"
