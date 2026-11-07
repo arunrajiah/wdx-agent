@@ -1,6 +1,10 @@
+<p align="center"><a href="https://wlnw.org"><img src="https://raw.githubusercontent.com/wlnw-org/wildnetwork/main/public/logo.svg" width="72" alt="Wildlife Network logo" /></a></p>
+
 # wdx-agent
 
 Send the wildlife detections your device already makes to an open, global map.
+
+Part of [Wildlife Network](https://wlnw.org).
 
 `wdx-agent` is a small, free program for a Raspberry Pi (or any Linux or macOS machine). It reads detections from BirdNET-Pi, BirdNET-Go, a camera trap classifier, or a bat detector, converts them to the open [WDX](https://github.com/arunrajiah/wildlife-detection-exchange) format, and pushes them to [Wildlife Network](https://wlnw.org) or any other WDX endpoint.
 
