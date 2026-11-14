@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 (2026-11-15)
+
+- New source `megadetector`: camera trap results in the MegaDetector batch output format with a species classifier (AddaxAI, EcoAssist and similar). One event per image and species, with the animal's box.
+- New source `frigate`: Frigate NVR events over its HTTP API, using the bird classification sub label (common names turned into scientific names with Frigate's own label list) or a species map for labels such as `deer`. Only finished events are sent.
+- New keys: `species_map`, `min_detection`, `api_token`, `frigate_labels_url`.
+
 ## 0.3.2 (2026-10-23)
 
 - WildNetwork moved to wlnw.org: the default endpoint and installer now use https://wlnw.org. Agents already installed keep working, because wildnetwork.arunrajiah.com still accepts uploads; to switch, set `endpoint = https://wlnw.org/api/v1/events` in /etc/wdx-agent.ini or reinstall.

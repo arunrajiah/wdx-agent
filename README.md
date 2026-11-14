@@ -22,6 +22,8 @@ Part of [Wildlife Network](https://wlnw.org).
   - [Acoustic station with BirdNET-Pi](#acoustic-station-with-birdnet-pi)
   - [Acoustic station with BirdNET-Go](#acoustic-station-with-birdnet-go)
   - [Camera trap with SpeciesNet](#camera-trap-with-speciesnet)
+  - [Camera trap with MegaDetector and a species classifier (AddaxAI, EcoAssist)](#camera-trap-with-megadetector-and-a-species-classifier)
+  - [Home camera with Frigate](#home-camera-with-frigate)
   - [Bat detector with BatDetect2](#bat-detector-with-batdetect2)
   - [Any detections table (CSV)](#any-detections-table-csv)
   - [Anything else: write WDX to a file](#anything-else-write-wdx-to-a-file)
@@ -106,6 +108,41 @@ curl -fsSL https://wlnw.org/agent/install.sh | WDX_SOURCE=speciesnet WDX_PATH=/d
 The agent skips blanks, humans and vehicles, and anything below `min_confidence`. The event time is the image file's modification time, so keep timestamps when copying (`cp -p`, `rsync -t`). One agent serves one location: for several cameras, run one config per camera with its own coordinates.
 
 For sensitive species, raise the rounding (`round_coords = 1` is about 11 km) or do not share that camera.
+
+### Camera trap with MegaDetector and a species classifier
+
+**Software:** [MegaDetector](https://github.com/agentmorris/MegaDetector) finds animals in camera trap images; a species classifier then names them. [AddaxAI](https://addaxdatascience.com/addaxai/) (formerly EcoAssist) runs both and writes the standard MegaDetector batch output file (a JSON with `images`, `detection_categories` and `classification_categories`). Other tools that write that format work too.
+
+**Share:** point the agent at the folder holding the output files and give the camera's location.
+
+```bash
+curl -fsSL https://wlnw.org/agent/install.sh | WDX_SOURCE=megadetector WDX_PATH=/data/camtrap WDX_LAT=-1.29 WDX_LON=36.82 bash
+```
+
+How the agent treats these files:
+
+- MegaDetector alone only says "animal", so images without a species classification send nothing.
+- Only animal boxes with a detection score of at least `min_detection` (default 0.2) count, and only their top classification. Each image gives one event per species, with the best score, if it reaches `min_confidence`.
+- Class names must name a taxon: a scientific name (`Vulpes vulpes`), `Common (Scientific)`, `Scientific (Common)`, or a SpeciesNet taxonomy string. For models that use common names only, add a `species_map` CSV (`red fox,Vulpes vulpes`, one per line).
+- The time comes from the image's `datetime` field, else from the file name, else the image file's modification time. The animal's box is sent with the event; the image itself is not.
+
+### Home camera with Frigate
+
+**Software:** [Frigate](https://frigate.video) records home and garden cameras and labels what it sees. Its optional bird classification (Settings, Enrichments) names the bird species as a sub label.
+
+**Share:** point the agent at Frigate's address (the internal API port, 5000, or the authenticated port with `api_token` set) and give the camera's location.
+
+```bash
+curl -fsSL https://wlnw.org/agent/install.sh | WDX_SOURCE=frigate WDX_PATH=http://frigate.local:5000 WDX_LAT=40.71 WDX_LON=-74.01 bash
+```
+
+How the agent treats Frigate events:
+
+- Only finished events are sent, so the final label is used. The first run starts with the last day.
+- Frigate's bird sub label is a common name such as `Blue Jay`. The agent turns it into the scientific name with the same label list Frigate uses, downloaded once next to the state file.
+- People, vehicles and generic labels (`bird`, `animal`, `dog` and so on unless mapped) are never sent. A sub label that is already a scientific name is used as is.
+- Generic labels such as `deer` or `fox` are sent only when your `species_map` CSV says which species lives at your site (`deer,Odocoileus virginianus`).
+- Pets: leave `cat` and `dog` out of the map. One agent serves one place; the camera name goes into the event's file name only.
 
 ### Bat detector with BatDetect2
 
@@ -213,14 +250,17 @@ Then install [wdx-agent.service](wdx-agent.service) into `/etc/systemd/system/`,
 |---|---|---|
 | `endpoint` | `https://wlnw.org/api/v1/events` | Where events are sent. Any WDX endpoint works. |
 | `api_key` | none | Device key from registration. Tied to one `source`. |
-| `source` | `birdnet-pi` | `birdnet-pi`, `birdnet-go`, `speciesnet`, `batdetect2`, `csv` or `ndjson`. |
-| `path` | none | Database file, predictions folder, or NDJSON file. |
+| `source` | `birdnet-pi` | `birdnet-pi`, `birdnet-go`, `speciesnet`, `megadetector`, `frigate`, `batdetect2`, `csv` or `ndjson`. |
+| `path` | none | Database file, predictions folder, NDJSON file, or for `frigate` the Frigate address. |
 | `station_id` | derived from hostname and machine id | Stable id for this device. |
 | `station_name` | empty | Optional public label. Leave empty to stay anonymous. |
 | `latitude`, `longitude` | empty | Used when the source has no coordinates (always for camera traps). |
 | `round_coords` | `2` | Decimals kept. 2 is about 1 km, 1 is about 11 km, 3 is about 110 m. |
 | `min_confidence` | `0.7` | Detections below this are never sent. |
 | `min_calls` | `2` | `batdetect2` only: calls needed in a recording before a species is reported. |
+| `species_map` | empty | `megadetector` and `frigate`: CSV of label to scientific name, for labels that are not scientific names. |
+| `min_detection` | `0.2` | `megadetector` only: lowest MegaDetector box score that counts. |
+| `api_token` | empty | `frigate` only: bearer token for Frigate's authenticated port. |
 | `filename_timezone` | `utc` | `batdetect2` only: `utc` or `local`, for the time in recording file names. |
 | `interval_seconds` | `60` | How often to look for new detections. |
 | `media_base_url` | empty | If your clips are publicly reachable, the URL prefix to link them. |

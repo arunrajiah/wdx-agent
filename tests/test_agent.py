@@ -250,5 +250,76 @@ class CsvSource(unittest.TestCase):
         self.assertEqual(ev["eventStart"], "2026-09-30T21:30:05+01:00")
 
 
+
+class CameraLabels(unittest.TestCase):
+    def test_label_forms(self):
+        f = agent.taxon_from_label
+        self.assertEqual(f("Cyanocitta cristata", {}), ("Cyanocitta cristata", ""))
+        self.assertEqual(f("Blue Jay (Cyanocitta cristata)", {}), ("Cyanocitta cristata", "Blue Jay"))
+        self.assertEqual(f("Vulpes vulpes (Red Fox)", {}), ("Vulpes vulpes", "Red Fox"))
+        self.assertEqual(f("x;mammalia;carnivora;canidae;vulpes;vulpes;red fox", {}), ("Vulpes vulpes", "red fox"))
+        self.assertEqual(f("deer", {"deer": "Capreolus capreolus"}), ("Capreolus capreolus", "deer"))
+        for bad in ("person", "car", "bird", "Deer", "", "blank"):
+            self.assertIsNone(f(bad, {}), bad)
+
+
+class MegaDetector(unittest.TestCase):
+    def test_classified_images_only(self):
+        tmp = tempfile.mkdtemp()
+        folder = Path(tmp) / "md"
+        folder.mkdir()
+        (folder / "out.json").write_text(json.dumps({
+            "detection_categories": {"1": "animal", "2": "person"},
+            "classification_categories": {"0": "Vulpes vulpes", "1": "Meles meles", "2": "empty"},
+            "images": [
+                {"file": "a/IMG_0001.JPG", "datetime": "2026:05:01 21:10:00", "detections": [
+                    {"category": "1", "conf": 0.95, "bbox": [0.1, 0.2, 0.3, 0.4], "classifications": [["0", 0.91], ["1", 0.05]]},
+                    {"category": "1", "conf": 0.90, "classifications": [["0", 0.80]]}]},
+                {"file": "a/IMG_0002.JPG", "datetime": "2026:05:01 21:12:00", "detections": [
+                    {"category": "1", "conf": 0.10, "classifications": [["1", 0.99]]}]},
+                {"file": "a/IMG_0003.JPG", "detections": [{"category": "2", "conf": 0.99}]},
+            ]}))
+        s = settings(tmp, "megadetector", str(folder), "latitude = 51.5\nlongitude = -0.1\n")
+        evs = [e for _, e in agent.SOURCES["megadetector"](s, None) if e]
+        self.assertEqual(len(evs), 1)
+        e = evs[0]
+        self.assertEqual(e["detection"]["scientificName"], "Vulpes vulpes")
+        self.assertAlmostEqual(e["detection"]["confidence"], 0.91)
+        self.assertEqual(e["media"]["region"]["coordinates"], [0.1, 0.2, 0.3, 0.4])
+        self.assertTrue(e["eventStart"].startswith("2026-05-01T21:10:00"))
+        self.assertEqual(e["deployment"]["sensorType"], "camera-trap")
+
+
+class Frigate(unittest.TestCase):
+    def test_events(self):
+        tmp = tempfile.mkdtemp()
+        s = settings(tmp, "frigate", "http://frigate:5000", "latitude = 40.7\nlongitude = -74.0\nspecies_map = " + tmp + "/map.csv\n")
+        Path(tmp, "map.csv").write_text("deer,Odocoileus virginianus\n")
+        Path(tmp, "frigate_bird_labels.txt").write_text("Cyanocitta cristata (Blue Jay)\nRhipidura fuliginosa placabilis (North Island Fantail)\n")
+        now = 1790000000.0
+        events = [
+            {"id": "1", "label": "bird", "sub_label": ["Cardinalis cardinalis", 0.92], "start_time": now + 1, "end_time": now + 5,
+             "camera": "feeder", "data": {"top_score": 0.8, "box": [0.1, 0.1, 0.2, 0.2]}},
+            {"id": "1b", "label": "bird", "sub_label": "Blue Jay", "start_time": now + 1.5, "end_time": now + 2, "data": {"top_score": 0.95}},
+            {"id": "2", "label": "person", "start_time": now + 2, "end_time": now + 3, "data": {"top_score": 0.9}},
+            {"id": "3", "label": "deer", "start_time": now + 3, "end_time": now + 9, "data": {"top_score": 0.85}},
+            {"id": "4", "label": "deer", "start_time": now + 4, "end_time": None, "data": {"top_score": 0.85}},
+            {"id": "5", "label": "deer", "start_time": now + 6, "end_time": now + 7, "data": {"top_score": 0.85}},
+        ]
+        orig = agent.frigate_get
+        agent.frigate_get = lambda s_, path: events if path.startswith("/api/events") else "0.16.0"
+        try:
+            out = list(agent.SOURCES["frigate"](s, now))
+        finally:
+            agent.frigate_get = orig
+        self.assertEqual([c for c, _ in out], [now + 1, now + 1.5, now + 2, now + 3])  # stops at the event still in progress
+        sent = [e for _, e in out if e]
+        self.assertEqual([e["detection"]["scientificName"] for e in sent], ["Cardinalis cardinalis", "Cyanocitta cristata", "Odocoileus virginianus"])
+        self.assertEqual(sent[1]["detection"]["vernacularName"], "Blue Jay")
+        self.assertAlmostEqual(sent[1]["detection"]["confidence"], 0.95)
+        self.assertAlmostEqual(sent[0]["detection"]["confidence"], 0.92)
+        self.assertEqual(sent[0]["detection"]["classifier"]["version"], "0.16.0")
+        self.assertEqual(sent[2]["detection"]["vernacularName"], "deer")
+
 if __name__ == "__main__":
     unittest.main()

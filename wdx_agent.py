@@ -37,7 +37,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-VERSION = "0.3.2"
+VERSION = "0.4.0"
 BATCH = 500
 
 
@@ -81,6 +81,11 @@ class Settings:
         # Recorders such as AudioMoth put the start time in the file name, in UTC unless configured otherwise.
         self.filename_timezone = a.get("filename_timezone", "utc").lower()
         self.min_calls = a.getint("min_calls", fallback=2)
+        # Camera sources: species_map CSV (label,scientific name), Frigate API token, MegaDetector detection threshold.
+        self.species_map = a.get("species_map", "")
+        self.api_token = a.get("api_token", "")
+        self.frigate_labels_url = a.get("frigate_labels_url", "") or FRIGATE_BIRD_LABELS
+        self.min_detection = a.getfloat("min_detection", fallback=0.2)
         self.csv = {k[4:]: v for k, v in a.items() if k.startswith("csv_")}
         # Device health (WDX device-status): sent when device_id is set, from the Wildlife Network device registry.
         self.device_id = a.get("device_id", "")
@@ -403,8 +408,223 @@ def read_ndjson(s: Settings, cursor):
                     log(f"skipping malformed line before byte {offset}")
 
 
+# --- camera sources: a label is only sent when it names a taxon -----------------------------------------
+
+BINOMIAL = re.compile(r"^([A-Z][a-z]+)(?: ([a-z][a-z-]+))?$")
+NOT_ANIMALS = {"person", "human", "car", "vehicle", "truck", "bicycle", "motorcycle", "bus", "boat", "blank", "empty",
+               "license_plate", "package", "face", "none", "unknown", "animal", "bird", "other"}
+
+
+def load_species_map(s: Settings) -> dict:
+    """Optional two-column CSV (label, scientific name), case-insensitive. Lets a generic label such as 'deer' or a
+    common name stand for the species that lives at this site."""
+    path = s.species_map
+    if not path:
+        return {}
+    with open(os.path.expanduser(path), newline="", encoding="utf-8-sig") as fh:
+        return {r[0].strip().lower(): r[1].strip() for r in csv.reader(fh) if len(r) >= 2 and r[1].strip()}
+
+
+def taxon_from_label(label: str, species_map: dict):
+    """(scientific name, common name) for a classifier label, or None when it does not name a taxon.
+    Understands 'Genus species', 'Genus species (Common)', 'Common (Genus species)' and SpeciesNet-style
+    'uuid;class;order;family;genus;species;common' strings."""
+    raw = (label or "").strip()
+    if not raw:
+        return None
+    mapped = species_map.get(raw.lower())
+    if mapped:
+        return mapped, raw if not BINOMIAL.match(raw) else ""
+    if raw.lower() in NOT_ANIMALS:
+        return None
+    if ";" in raw:
+        parts = (raw.split(";") + [""] * 7)[:7]
+        genus, species, common = parts[4].strip(), parts[5].strip(), parts[6].strip()
+        if not genus or common.lower() in NOT_ANIMALS:
+            return None
+        return f"{genus.capitalize()} {species}".strip(), common
+    m = re.match(r"^(.*?)\s*\(([^)]*)\)\s*$", raw)
+    if m:
+        a, b = m.group(1).strip(), m.group(2).strip()
+        if BINOMIAL.match(a) and " " in a:
+            return a, b
+        if BINOMIAL.match(b) and " " in b:
+            return b, a
+    raw = raw.replace("_", " ")
+    if " " in raw and BINOMIAL.match(raw[0].upper() + raw[1:]):
+        return raw[0].upper() + raw[1:], ""
+    return None
+
+
+def detection(sci: str, common: str, conf: float, name: str, version: str) -> dict:
+    d = {"scientificName": sci, "taxonRank": "species" if " " in sci else "genus",
+         "confidence": max(0.0, min(1.0, float(conf))), "classifier": {"name": name, "version": version}}
+    if common:
+        d["vernacularName"] = common
+    return d
+
+
+def frigate_get(s: Settings, path: str):
+    headers = {"user-agent": f"wdx-agent/{VERSION}"}
+    if s.api_token:
+        headers["authorization"] = f"Bearer {s.api_token}"
+    req = urllib.request.Request(s.path.rstrip("/") + path, headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as r:
+        body = r.read().decode()
+    try:
+        return json.loads(body)
+    except ValueError:
+        return body.strip()
+
+
+FRIGATE_BIRD_LABELS = "https://raw.githubusercontent.com/google-coral/test_data/master/inat_bird_labels.txt"
+
+
+def frigate_bird_map(s: Settings) -> dict:
+    """Frigate's bird classification sets the sub label to the common name from this label list
+    ('Cyanocitta cristata (Blue Jay)'). Downloaded once next to the state file; common name -> binomial."""
+    cache = Path(s.state_path).with_name("frigate_bird_labels.txt")
+    if not cache.exists():
+        try:
+            req = urllib.request.Request(s.frigate_labels_url, headers={"user-agent": f"wdx-agent/{VERSION}"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                cache.write_bytes(r.read())
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            log(f"bird label list not loaded ({e}); only scientific names and species_map are used")
+            return {}
+    out = {}
+    for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = re.match(r"^([A-Z][a-z]+ [a-z-]+)(?: [a-z-]+)? \((.+)\)\s*$", line.strip())
+        if m:
+            out.setdefault(m.group(2).strip().lower(), m.group(1))
+    return out
+
+
+def read_frigate(s: Settings, cursor):
+    """Frigate NVR over its HTTP API (path = http://frigate-host:5000). Uses the bird classification sub label
+    (Frigate 0.16+) or a species_map for generic labels such as 'deer'. Cursor = start time of the last finished
+    event read; events still in progress are left for the next run so their final label is used."""
+    dep = deployment(s, None, None, s.sensor_type if s.sensor_type != "acoustic-recorder" else "camera-trap",
+                     s.sensor_model or "Frigate")
+    if dep is None:
+        sys.exit("cameras need latitude/longitude in the config")
+    species_map = {**frigate_bird_map(s), **load_species_map(s)}
+    after = float(cursor or 0) or time.time() - 86400  # first run: the last day only
+    events = frigate_get(s, f"/api/events?after={after}&limit={BATCH}&sort=date_asc&include_thumbnails=0")
+    if not isinstance(events, list):
+        return
+    version = s.classifier_version
+    if version == "unknown":
+        try:
+            version = str(frigate_get(s, "/api/version"))[:40] or "unknown"
+        except (urllib.error.URLError, TimeoutError):
+            pass
+    for e in sorted(events, key=lambda e: e.get("start_time") or 0):
+        start = e.get("start_time")
+        if start is None or start <= after:
+            continue
+        if e.get("end_time") is None:
+            return  # still in progress: stop here so it is read once finished
+        sub = e.get("sub_label")
+        sub_name, sub_score = (sub[0], sub[1]) if isinstance(sub, list) and len(sub) >= 2 else (sub, None)
+        data = e.get("data") or {}
+        taxon = taxon_from_label(sub_name, species_map) if sub_name else None
+        conf = sub_score if taxon and sub_score is not None else (data.get("top_score") or e.get("top_score") or data.get("score") or 0)
+        if not taxon:
+            taxon = taxon_from_label(e.get("label", ""), species_map)
+        if not taxon or e.get("false_positive") or float(conf) < s.min_confidence:
+            yield start, None
+            continue
+        sci, common = taxon
+        rid = str(e.get("id"))
+        ev = base_event(s, f"{s.system}:{s.station_id}:{rid}",
+                        datetime.fromtimestamp(start).astimezone().isoformat(timespec="seconds"), dep, rid)
+        ev["detection"] = detection(sci, common, conf, s.classifier or "Frigate", version)
+        media = {"mediaType": "image", "fileName": f"{e.get('camera', 'camera')}-{rid}.jpg"}
+        box = data.get("box")
+        if isinstance(box, list) and len(box) == 4:
+            media["region"] = {"type": "box", "coordinates": [float(v) for v in box], "units": "normalized"}
+        ev["media"] = media
+        yield start, ev
+
+
+EXIF_TIME = re.compile(r"^(\d{4})[:-](\d{2})[:-](\d{2})[ T](\d{2}):(\d{2}):(\d{2})")
+
+
+def read_megadetector(s: Settings, cursor):
+    """Folder of MegaDetector batch output files (also written by AddaxAI, EcoAssist and other camera trap tools)
+    that include a species classifier's results. One event per image and species, best score kept. MegaDetector
+    alone only says 'animal', so files without classifications send nothing. Cursor maps each file to its mtime."""
+    dep = deployment(s, None, None, "camera-trap", s.sensor_model or "MegaDetector")
+    if dep is None:
+        sys.exit("camera traps need latitude/longitude in the config")
+    species_map = load_species_map(s)
+    seen = dict(cursor or {})
+    sent = 0
+    for f in sorted(Path(s.path).glob("**/*.json")):
+        mtime = f.stat().st_mtime
+        if seen.get(str(f)) == mtime:
+            continue
+        try:
+            doc = json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+        if not isinstance(doc, dict) or not isinstance(doc.get("images"), list):
+            continue
+        det_cats = doc.get("detection_categories") or {"1": "animal"}
+        cls_cats = doc.get("classification_categories") or {}
+        descs = doc.get("classification_category_descriptions") or {}
+        info = doc.get("info") or {}
+        clf_name = s.classifier or info.get("classifier") or "species classifier"
+        clf_version = s.classifier_version if s.classifier_version != "unknown" else str(info.get("classifier_version") or info.get("detector") or "unknown")
+        file_events = []
+        for img in doc["images"]:
+            best = {}
+            for d in img.get("detections") or []:
+                if det_cats.get(str(d.get("category")), "") != "animal" or float(d.get("conf") or 0) < s.min_detection:
+                    continue
+                for cid, score in (d.get("classifications") or [])[:1]:
+                    label = descs.get(str(cid)) or cls_cats.get(str(cid), "")
+                    taxon = taxon_from_label(label, species_map) or taxon_from_label(cls_cats.get(str(cid), ""), species_map)
+                    if not taxon or float(score) < s.min_confidence:
+                        continue
+                    if taxon[0] not in best or score > best[taxon[0]][1]:
+                        best[taxon[0]] = (taxon[1], float(score), d.get("bbox"))
+            if not best:
+                continue
+            name = str(img.get("file", ""))
+            m = EXIF_TIME.match(str(img.get("datetime") or ""))
+            if m:
+                when = datetime(*(int(g) for g in m.groups())).astimezone()
+            else:
+                img_path = name if os.path.isabs(name) else str(f.parent / name)
+                try:
+                    when = recording_start(s, name, img_path)
+                except OSError:
+                    when = datetime.fromtimestamp(mtime).astimezone()
+            for sci, (common, score, bbox) in best.items():
+                rid = hashlib.sha256(f"{name}|{sci}".encode()).hexdigest()[:16]
+                ev = base_event(s, f"{s.system}:{s.station_id}:{rid}", when.isoformat(timespec="seconds"), dep, rid)
+                ev["detection"] = detection(sci, common, score, clf_name, clf_version)
+                media = {"mediaType": "image", "fileName": os.path.basename(name) or "unknown.jpg"}
+                if isinstance(bbox, list) and len(bbox) == 4:
+                    media["region"] = {"type": "box", "coordinates": [float(v) for v in bbox], "units": "normalized"}
+                ev["media"] = media
+                file_events.append(ev)
+        seen[str(f)] = mtime
+        if not file_events:
+            yield dict(seen), None  # nothing to send, but remember the file
+            continue
+        for ev in file_events:
+            sent += 1
+            yield dict(seen), ev
+        if sent >= BATCH:
+            break
+
+
 SOURCES = {"birdnet-pi": read_birdnet_pi, "birdnet-go": read_birdnet_go, "speciesnet": read_speciesnet,
-           "batdetect2": read_batdetect2, "csv": read_csv, "ndjson": read_ndjson}
+           "batdetect2": read_batdetect2, "csv": read_csv, "ndjson": read_ndjson,
+           "frigate": read_frigate, "megadetector": read_megadetector}
 
 
 def post(s: Settings, events: list) -> dict:

@@ -24,7 +24,7 @@ if [ -z "$SOURCE" ]; then
     [ -f "$p" ] && { SOURCE=birdnet-go; DBPATH="$p"; break; }
   done
 fi
-[ -n "$SOURCE" ] || { echo "No BirdNET-Pi or BirdNET-Go database found. Re-run with WDX_SOURCE and WDX_PATH set (sources: birdnet-pi, birdnet-go, speciesnet, batdetect2, csv, ndjson)."; exit 1; }
+[ -n "$SOURCE" ] || { echo "No BirdNET-Pi or BirdNET-Go database found. Re-run with WDX_SOURCE and WDX_PATH set (sources: birdnet-pi, birdnet-go, speciesnet, megadetector, frigate, batdetect2, csv, ndjson)."; exit 1; }
 say "Found $SOURCE at $DBPATH"
 
 NAME="${WDX_NAME:-$(hostname)}"
