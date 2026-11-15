@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 (2026-11-15)
+
+- Installer: running it again keeps the existing key instead of registering a new one, takes a new key when `WDX_KEY` is given, and moves agents still pointing at wildnetwork.arunrajiah.com to the current server.
+- Installer: checks that the detections can be read and that the server accepts the key before starting the service, and says plainly what to fix when not.
+
 ## 0.4.0 (2026-11-15)
 
 - New source `megadetector`: camera trap results in the MegaDetector batch output format with a species classifier (AddaxAI, EcoAssist and similar). One event per image and species, with the animal's box.

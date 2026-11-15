@@ -29,6 +29,10 @@ say "Found $SOURCE at $DBPATH"
 
 NAME="${WDX_NAME:-$(hostname)}"
 KEY="${WDX_KEY:-}"
+# Re-running the installer keeps the existing key unless a new one is given (no second registration).
+if [ -z "$KEY" ] && [ -f "$CONF" ]; then
+  KEY="$(sudo sed -n 's/^api_key *= *//p' "$CONF" | head -1)"
+fi
 if [ -z "$KEY" ]; then
   REG_SOURCE="$SOURCE"; { [ "$SOURCE" = ndjson ] || [ "$SOURCE" = csv ]; } && REG_SOURCE=other
   say "Registering this device with $BASE"
@@ -69,9 +73,23 @@ state_file = /var/lib/wdx-agent/state.json
 INI
   sudo chmod 640 "$CONF"; sudo chown "root:$(id -gn "$RUN_USER")" "$CONF"
 else
-  say "Keeping existing $CONF"
+  say "Updating existing $CONF (key and server address; other settings kept)"
+  sudo sed -i "s|^api_key *=.*|api_key = $KEY|; s|^endpoint *=.*wildnetwork\.arunrajiah\.com.*|endpoint = $BASE/api/v1/events|" "$CONF"
 fi
 sudo mkdir -p /var/lib/wdx-agent && sudo chown "$RUN_USER" /var/lib/wdx-agent
+
+# Check before starting the service, so a wrong path or key shows up now and not silently in the system log.
+say "Checking that the detections can be read"
+if ! sudo -u "$RUN_USER" python3 /opt/wdx-agent/wdx_agent.py --config "$CONF" --dry-run >/tmp/wdx-agent-check.log 2>&1; then
+  echo "Could not read the detections at $DBPATH:"; tail -3 /tmp/wdx-agent-check.log
+  echo "Fix the path (WDX_PATH=...) and run the installer again."; exit 1
+fi
+say "Checking the key with $BASE"
+CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/events" -H "authorization: Bearer $KEY" -H 'content-type: application/json' -d '[]' || echo 000)"
+case "$CODE" in
+  401|403) echo "The server did not accept this key. Make a new one in BirdEcho or at $BASE/contribute and run the installer again with WDX_KEY=<key>."; exit 1 ;;
+  000) echo "Could not reach $BASE. Check the internet connection; the agent will keep trying once it is running." ;;
+esac
 
 curl -fsSL "$BASE/agent/wdx-agent.service" | sed "s/__USER__/$RUN_USER/" | sudo tee /etc/systemd/system/wdx-agent.service >/dev/null
 sudo systemctl daemon-reload
