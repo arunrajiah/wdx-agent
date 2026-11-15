@@ -2,7 +2,8 @@ name: test
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # 3.9 (Raspberry Pi OS bullseye) is not built for ubuntu-latest (26.04); 24.04 still has it.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python: ["3.9", "3.12"]
