@@ -2,7 +2,8 @@
 # wdx-agent installer for Raspberry Pi / Linux.
 #   curl -fsSL https://wlnw.org/agent/install.sh | bash
 # Detects BirdNET-Pi or BirdNET-Go, registers a device key, and installs a systemd service.
-# Override anything with env vars: WDX_SOURCE, WDX_PATH, WDX_LAT, WDX_LON, WDX_NAME, WDX_KEY, WDX_BASE.
+# Override anything with env vars: WDX_SOURCE, WDX_PATH, WDX_LAT, WDX_LON, WDX_NAME, WDX_KEY, WDX_BASE,
+# WDX_DEVICE_ID (from BirdEcho or the device registry: turns on health reports, so the app can show it is sending).
 set -euo pipefail
 
 BASE="${WDX_BASE:-https://wlnw.org}"
@@ -62,6 +63,7 @@ api_key = $KEY
 source = $SOURCE
 path = $DBPATH
 station_name = $NAME
+device_id = ${WDX_DEVICE_ID:-}
 # Used only when the detection database has no coordinates.
 latitude = ${WDX_LAT:-}
 longitude = ${WDX_LON:-}
@@ -75,6 +77,10 @@ INI
 else
   say "Updating existing $CONF (key and server address; other settings kept)"
   sudo sed -i "s|^api_key *=.*|api_key = $KEY|; s|^endpoint *=.*wildnetwork\.arunrajiah\.com.*|endpoint = $BASE/api/v1/events|" "$CONF"
+  if [ -n "${WDX_DEVICE_ID:-}" ]; then
+    if sudo grep -q "^device_id *=" "$CONF"; then sudo sed -i "s|^device_id *=.*|device_id = $WDX_DEVICE_ID|" "$CONF"
+    else echo "device_id = $WDX_DEVICE_ID" | sudo tee -a "$CONF" >/dev/null; fi
+  fi
 fi
 sudo mkdir -p /var/lib/wdx-agent && sudo chown "$RUN_USER" /var/lib/wdx-agent
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2 (2026-11-16)
+
+- Installer: `WDX_DEVICE_ID` (BirdEcho passes it) sets `device_id`, which turns on health reports, so the app and wlnw.org/stations can show when the station last reported.
+
 ## 0.4.1 (2026-11-15)
 
 - Installer: running it again keeps the existing key instead of registering a new one, takes a new key when `WDX_KEY` is given, and moves agents still pointing at wildnetwork.arunrajiah.com to the current server.

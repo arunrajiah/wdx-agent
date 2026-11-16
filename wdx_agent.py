@@ -37,7 +37,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 BATCH = 500
 
 
