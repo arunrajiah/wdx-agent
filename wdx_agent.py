@@ -37,7 +37,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 BATCH = 500
 
 
@@ -682,11 +682,38 @@ def run_once(s: Settings, dry: bool) -> int:
     return len(events)
 
 
+LATEST: dict = {"version": None, "checked": 0.0}
+
+
+def newer(a: str, b: str) -> bool:
+    """True when version a is newer than b ("0.4.10" > "0.4.9")."""
+    def parts(v: str) -> tuple:
+        return tuple(int(x) if x.isdigit() else 0 for x in v.strip().split("."))
+    return parts(a) > parts(b)
+
+
+def check_latest(s: Settings) -> None:
+    """Once a day: ask the server which agent version is current and say so in the log when this one is older."""
+    if time.time() - LATEST["checked"] < 86_400:
+        return
+    LATEST["checked"] = time.time()
+    url = s.endpoint.split("/api/", 1)[0] + "/agent/VERSION"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"user-agent": f"wdx-agent/{VERSION}"}), timeout=15) as r:
+            latest = r.read(32).decode().strip()
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return
+    if latest and all(p.isdigit() for p in latest.split(".")):
+        LATEST["version"] = latest
+        if newer(latest, VERSION):
+            log(f"wdx-agent {latest} is available (this is {VERSION}). Run the install command again to update; your settings are kept.")
+
+
 def collect_status(s: Settings) -> dict:
     """WDX device-status record: what can be read on any Linux device, plus the battery if a command is configured."""
     st = {"wdx": "0.2", "kind": "device-status", "deviceId": s.device_id or s.station_id,
           "at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
-          "software": {"wdx-agent": VERSION}}
+          "software": {"wdx-agent": VERSION, **({"latest": LATEST["version"]} if LATEST["version"] else {})}}
     try:
         du = shutil.disk_usage(os.path.dirname(s.state_path) or "/")
         st["storage"] = {"freeMb": du.free // 1_000_000, "totalMb": du.total // 1_000_000}
@@ -745,6 +772,8 @@ def main() -> None:
                     post_status(s)
                 except (urllib.error.URLError, TimeoutError) as e:
                     log(f"status not sent: {e}")
+            if not args.dry_run:
+                check_latest(s)
             n = run_once(s, args.dry_run)
             backoff = s.interval
             if args.once or args.dry_run:

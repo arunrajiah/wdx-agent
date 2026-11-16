@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3 (2026-11-16)
+
+- Once a day the agent asks the server for the current version (`/agent/VERSION`). When it is older, the log says so and how to update (run the install command again; settings are kept), and health reports include `software.latest`.
+
 ## 0.4.2 (2026-11-16)
 
 - Installer: `WDX_DEVICE_ID` (BirdEcho passes it) sets `device_id`, which turns on health reports, so the app and wlnw.org/stations can show when the station last reported.

@@ -323,3 +323,12 @@ class Frigate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Versions(unittest.TestCase):
+    def test_newer(self):
+        import wdx_agent as w
+        self.assertTrue(w.newer("0.4.10", "0.4.9"))
+        self.assertTrue(w.newer("0.5.0", "0.4.3"))
+        self.assertFalse(w.newer("0.4.3", "0.4.3"))
+        self.assertFalse(w.newer("0.4.2", "0.4.3"))
