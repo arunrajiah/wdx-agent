@@ -113,6 +113,51 @@ class BirdNetGoV2(unittest.TestCase):
         self.assertEqual(list(agent.read_birdnet_go(s, {"d": 4})), [])
 
 
+class BirdNetGoLayouts(unittest.TestCase):
+    def test_layout_detection(self):
+        self.assertEqual(agent.birdnet_go_layout({"detections", "labels", "ai_models", "label_types"}), "detections")
+        self.assertEqual(agent.birdnet_go_layout({"detections", "labels"}), "detections")
+        self.assertEqual(agent.birdnet_go_layout({"notes", "results"}), "notes")
+        self.assertIsNone(agent.birdnet_go_layout({"detections"}))   # no labels: not the current layout
+        self.assertIsNone(agent.birdnet_go_layout(set()))
+
+    def test_unknown_layout_warns_once_and_sends_nothing(self):
+        tmp = tempfile.mkdtemp()
+        db = f"{tmp}/birdnet.db"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE observations (id INTEGER PRIMARY KEY)")
+        con.close()
+        s = settings(tmp, "birdnet-go", db, "latitude = 1\nlongitude = 2\n")
+        logged = []
+        orig = agent.log
+        agent.log = logged.append
+        try:
+            self.assertEqual(list(agent.read_birdnet_go(s, None)), [])
+            self.assertEqual(list(agent.read_birdnet_go(s, None)), [])
+        finally:
+            agent.log = orig
+        self.assertEqual(len(logged), 1)
+        self.assertIn("layout not recognised", logged[0])
+        self.assertIn("observations", logged[0])
+
+
+class TestStation(unittest.TestCase):
+    def test_test_flag_only_when_on(self):
+        tmp = tempfile.mkdtemp()
+        db = os.path.join(tmp, "birdnet.db")
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, date TEXT, time TEXT, scientific_name TEXT, common_name TEXT, "
+                    "confidence REAL, latitude REAL, longitude REAL, clip_name TEXT)")
+        con.execute("INSERT INTO notes (date,time,scientific_name,common_name,confidence,latitude,longitude,clip_name) "
+                    "VALUES ('2026-10-01','07:01:10','Psittacula krameri','Rose-ringed Parakeet',0.9,1,2,NULL)")
+        con.commit()
+        con.close()
+        _, ev = next(agent.read_birdnet_go(settings(tmp, "birdnet-go", db), None))
+        self.assertNotIn("test", ev)
+        _, ev = next(agent.read_birdnet_go(settings(tmp, "birdnet-go", db, "test = yes\n"), None))
+        self.assertIs(ev["test"], True)
+
+
 class StatusAndPickup(unittest.TestCase):
     def test_status_record_and_cursor_helpers(self):
         tmp = tempfile.mkdtemp()

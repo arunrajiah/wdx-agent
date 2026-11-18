@@ -37,7 +37,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-VERSION = "0.4.3"
+VERSION = "0.4.4"
 BATCH = 500
 
 
@@ -71,6 +71,8 @@ class Settings:
         self.interval = a.getint("interval_seconds", fallback=60)
         self.media_base_url = a.get("media_base_url", "")
         self.license = a.get("license", "https://creativecommons.org/licenses/by/4.0/")
+        # Test station: every event carries "test": true and the server keeps it off the public map.
+        self.test = a.getboolean("test", fallback=False)
         self.state_path = os.path.expanduser(a.get("state_file", "~/.wdx-agent-state.json"))
         # What the server sees as source.system. The csv source is generic, so it reports "other" unless told otherwise.
         self.system = a.get("system", "") or ("other" if self.source == "csv" else self.source)
@@ -131,6 +133,7 @@ def base_event(s: Settings, event_id: str, start: str, dep: dict, record_id: str
         "review": {"status": "unreviewed"},
         "source": {"system": s.system, "systemVersion": f"wdx-agent/{VERSION}", "sourceRecordId": record_id},
         "license": s.license,
+        **({"test": True} if s.test else {}),
     }
 
 
@@ -157,13 +160,35 @@ def read_birdnet_pi(s: Settings, cursor):
         yield rowid, ev
 
 
+BIRDNET_GO_WARNED: set = set()
+
+
+def birdnet_go_layout(tables: set) -> str | None:
+    """Which BirdNET-Go datastore this is: "detections" (current: detections + labels, with ai_models and
+    label_types when present), "notes" (older releases), or None when neither is recognised."""
+    if "detections" in tables and "labels" in tables:
+        return "detections"
+    if "notes" in tables:
+        return "notes"
+    return None
+
+
 def read_birdnet_go(s: Settings, cursor):
     """BirdNET-Go. Older versions keep a `notes` table (cursor = note id). Current versions keep `detections` joined to
     `labels` and `ai_models` (cursor = {"d": detection id}); migrated rows keep their note id as legacy_id, so their
     eventIds match what was sent before the upgrade and the server deduplicates them."""
     db = sqlite3.connect(f"file:{s.path}?mode=ro", uri=True, timeout=10)
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    if "detections" in tables and "labels" in tables:
+    layout = birdnet_go_layout(tables)
+    if layout is None:
+        db.close()
+        if s.path not in BIRDNET_GO_WARNED:
+            BIRDNET_GO_WARNED.add(s.path)
+            log(f"WARNING: BirdNET-Go database layout not recognised in {s.path} (tables: "
+                f"{', '.join(sorted(tables)) or 'none yet'}); nothing is sent. This agent reads the `detections` + "
+                "`labels` layout and the older `notes` layout. If BirdNET-Go was updated, update wdx-agent too.")
+        return
+    if layout == "detections":
         start = cursor.get("d", 0) if isinstance(cursor, dict) else 0
         rows = db.execute(
             "SELECT d.id, d.legacy_id, d.detected_at, l.scientific_name, d.confidence, d.latitude, d.longitude, d.clip_name, "

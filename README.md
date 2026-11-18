@@ -86,7 +86,7 @@ You need two things: something that detects animals, and this agent to share wha
 curl -fsSL https://wlnw.org/agent/install.sh | WDX_SOURCE=birdnet-go WDX_PATH=/path/to/birdnet.db bash
 ```
 
-The agent reads both BirdNET-Go datastores: the newer one (`detections` table) and the older one (`notes` table). After BirdNET-Go migrates an old database, detections that were already sent keep their ids, so nothing is counted twice. Detections BirdNET-Go marks as unlikely for your location, and non-species labels such as noise, are skipped.
+The agent reads both BirdNET-Go datastores: the newer one (`detections` table) and the older one (`notes` table). It checks which one it has at start; for a layout it does not know it logs one warning and sends nothing, so update the agent when BirdNET-Go changes its database. After BirdNET-Go migrates an old database, detections that were already sent keep their ids, so nothing is counted twice. Detections BirdNET-Go marks as unlikely for your location, and non-species labels such as noise, are skipped.
 
 ### Camera trap with SpeciesNet
 
@@ -266,6 +266,7 @@ Then install [wdx-agent.service](wdx-agent.service) into `/etc/systemd/system/`,
 | `media_base_url` | empty | If your clips are publicly reachable, the URL prefix to link them. |
 | `license` | CC BY 4.0 | License you grant on the detections you share. |
 | `state_file` | `~/.wdx-agent-state.json` | Where the agent remembers what it already sent. |
+| `test` | `no` | `yes` marks every event `"test": true`: Wildlife Network keeps them apart and off the public map. For trying a new station. |
 | `device_id` | empty | Id from the Wildlife Network device registry. When set, the agent also sends a health report (WDX device status). |
 | `status_interval_seconds` | `900` | How often the health report is sent. |
 | `status_endpoint` | the `endpoint` with `/events` replaced by `/devices/status` | Where health reports go. |

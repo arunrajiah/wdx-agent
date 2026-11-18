@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4 (2026-11-19)
+
+- BirdNET-Go: the database layout is detected explicitly (current `detections` + `labels`, or the older `notes`). An unknown layout is logged once as a warning and nothing is sent, instead of failing on every pass.
+- New key `test` (default `no`): when `yes`, every event carries `"test": true`, and Wildlife Network keeps those events off the public map. The Wildlife Network Base sets it from its "Test station" option.
+
 ## 0.4.3 (2026-11-16)
 
 - Once a day the agent asks the server for the current version (`/agent/VERSION`). When it is older, the log says so and how to update (run the install command again; settings are kept), and health reports include `software.latest`.
