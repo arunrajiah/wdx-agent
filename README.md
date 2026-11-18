@@ -52,7 +52,12 @@ The installer:
 1. finds your BirdNET database,
 2. registers a device key for your station (no account needed),
 3. writes `/etc/wdx-agent.ini`,
-4. installs and starts a `wdx-agent` systemd service.
+4. checks that it can read the detections and that the server accepts the key, and says plainly what to fix if not,
+5. installs and starts a `wdx-agent` systemd service.
+
+The BirdEcho app gives you this command with your station's key and device id filled in (`WDX_KEY=... WDX_DEVICE_ID=...`). The device id turns on health reports, so BirdEcho can show whether the station is sending.
+
+**Updating or changing the key.** Run the same command again. It keeps your settings and your key, takes a new key when you pass `WDX_KEY`, and moves agents that still send to the old `wildnetwork.arunrajiah.com` address to wlnw.org. Once a day the agent checks `https://wlnw.org/agent/VERSION`; when a newer version exists, the log says so (`journalctl -u wdx-agent`), and health reports include it.
 
 Your detections appear on the map within a minute or two. Watch the agent work:
 
@@ -289,6 +294,8 @@ The health report holds free storage, CPU temperature, uptime, detections waitin
 - Event ids are stable (`source:station:row`), so sending twice never creates duplicates.
 - On errors it retries with a growing delay, up to one hour.
 - The database is opened read-only. The agent never writes to BirdNET's files.
+- Once a day it asks the server for the current agent version and logs a notice when it is out of date. It never updates itself.
+- With `test = yes` every event carries `"test": true`; Wildlife Network keeps those detections apart and off the public map until test mode is switched off.
 
 ## Troubleshooting
 
