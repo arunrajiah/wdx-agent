@@ -292,7 +292,8 @@ The health report holds free storage, CPU temperature, uptime, detections waitin
 - Sends new detections in batches of up to 500.
 - The cursor moves forward only after the server accepts a batch. A Pi that was offline for a week sends that week when it reconnects.
 - Event ids are stable (`source:station:row`), so sending twice never creates duplicates.
-- On errors it retries with a growing delay, up to one hour.
+- When the network is down it tries again within a minute, so it catches up soon after the network returns (status report included). When the server answers with an error it retries with a growing delay, up to one hour.
+- Once an hour, and right after it reconnects, the log has a summary line: events sent (new and rejected) and status reports sent. The service starts after the network is up (`network-online.target`).
 - The database is opened read-only. The agent never writes to BirdNET's files.
 - Once a day it asks the server for the current agent version and logs a notice when it is out of date. It never updates itself.
 - With `test = yes` every event carries `"test": true`; Wildlife Network keeps those detections apart and off the public map until test mode is switched off.

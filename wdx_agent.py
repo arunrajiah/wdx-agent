@@ -37,7 +37,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-VERSION = "0.4.4"
+VERSION = "0.4.5"
 BATCH = 500
 
 
@@ -696,6 +696,7 @@ def run_once(s: Settings, dry: bool) -> int:
         log(f"dry run: {len(events)} events ready (showing up to 5)")
         return len(events)
     res = post(s, events) if events else {"received": 0, "inserted": 0, "updated": 0, "rejected": 0}
+    PROGRESS.events(res)
     log(f"sent {res.get('received')} (new {res.get('inserted')}, updated {res.get('updated')}, rejected {res.get('rejected')})")
     if res.get("rejected"):
         log(f"rejected sample: {json.dumps(res.get('rejectedDetails', [])[:2])}")
@@ -706,6 +707,61 @@ def run_once(s: Settings, dry: bool) -> int:
     save_cursor(s, batch[-1][0])
     return len(events)
 
+
+SUMMARY_EVERY = 3600     # seconds between "sent so far" lines in the log
+NETWORK_RETRY = 60       # after a network error, try again at least this often (status and events)
+
+
+class Progress:
+    """Counts what was sent, for an info line once an hour and right after the first success after a network
+    failure, so the log shows that uploads work, not only when they fail."""
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self.reset()
+        self.failures = 0
+        self.last_summary = clock()
+
+    def reset(self):
+        self.sent = self.inserted = self.rejected = self.status = 0
+
+    def events(self, res: dict) -> None:
+        self.sent += int(res.get("received") or 0)
+        self.inserted += int(res.get("inserted") or 0)
+        self.rejected += int(res.get("rejected") or 0)
+
+    def status_sent(self) -> None:
+        self.status += 1
+
+    def failed(self) -> None:
+        self.failures += 1
+
+    def ok(self) -> str | None:
+        """Call after a pass without errors. Returns the summary line when one is due (and logs it)."""
+        recovered = self.failures > 0
+        if not recovered and self.clock() - self.last_summary < SUMMARY_EVERY:
+            return None
+        mins = max(1, round((self.clock() - self.last_summary) / 60))
+        line = (f"summary: {self.sent} events sent ({self.inserted} new, {self.rejected} rejected) and "
+                f"{self.status} status reports in the last {mins} min")
+        if recovered:
+            line = f"connection back after {self.failures} failed attempt(s); " + line
+        log(line)
+        self.reset()
+        self.failures = 0
+        self.last_summary = self.clock()
+        return line
+
+
+def retry_wait(err: BaseException, backoff: int, interval: int) -> int:
+    """Seconds to wait after an error. A server answer (HTTP error) backs off up to an hour; a network error
+    (no route, DNS, timeout) retries within a minute, so the agent catches up soon after the network returns."""
+    if isinstance(err, urllib.error.HTTPError):
+        return min(backoff * 2, 3600)
+    return min(max(interval, 1), NETWORK_RETRY)
+
+
+PROGRESS = Progress()
 
 LATEST: dict = {"version": None, "checked": 0.0}
 
@@ -790,27 +846,36 @@ def main() -> None:
     backoff = s.interval
     last_status = 0.0
     while True:
+        pass_failed = False
         try:
             if s.device_id and not args.dry_run and time.time() - last_status >= s.status_interval:
                 last_status = time.time()
                 try:
                     post_status(s)
+                    PROGRESS.status_sent()
                 except (urllib.error.URLError, TimeoutError) as e:
-                    log(f"status not sent: {e}")
+                    log(f"status not sent: {e}; retrying with the next attempt")
+                    last_status = 0.0   # not the next 15-minute window: as soon as the network is back
+                    PROGRESS.failed()
+                    pass_failed = True
             if not args.dry_run:
                 check_latest(s)
             n = run_once(s, args.dry_run)
             backoff = s.interval
+            if not args.dry_run and not pass_failed:
+                PROGRESS.ok()
             if args.once or args.dry_run:
                 return
             if n >= BATCH:
                 continue  # more waiting, keep draining
         except (urllib.error.URLError, TimeoutError, sqlite3.OperationalError) as e:
             detail = e.read().decode()[:200] if isinstance(e, urllib.error.HTTPError) else str(e)
+            backoff = retry_wait(e, backoff, s.interval)
             log(f"error: {detail}; retrying in {backoff}s")
+            if not isinstance(e, sqlite3.OperationalError):
+                PROGRESS.failed()
             if args.once:
                 sys.exit(1)
-            backoff = min(backoff * 2, 3600)
         time.sleep(backoff)
 
 

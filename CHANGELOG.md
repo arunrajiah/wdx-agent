@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.5 (2026-11-19)
+
+- The log now shows that uploads work: once an hour, and right after the first success following a network failure, an info line sums up events sent (new and rejected) and status reports sent since the last one.
+- After a network error the agent tries again within a minute (or `interval_seconds` if shorter), for events and for the status report, instead of backing off up to an hour or waiting for the next 15-minute status window. Errors from the server itself still back off up to an hour.
+
 ## 0.4.4 (2026-11-19)
 
 - BirdNET-Go: the database layout is detected explicitly (current `detections` + `labels`, or the older `notes`). An unknown layout is logged once as a warning and nothing is sent, instead of failing on every pass.

@@ -158,6 +158,53 @@ class TestStation(unittest.TestCase):
         self.assertIs(ev["test"], True)
 
 
+class ProgressAndRecovery(unittest.TestCase):
+    def test_hourly_summary(self):
+        now = [0.0]
+        p = agent.Progress(clock=lambda: now[0])
+        logged = []
+        orig, agent.log = agent.log, logged.append
+        try:
+            p.events({"received": 5, "inserted": 4, "rejected": 1})
+            p.status_sent()
+            self.assertIsNone(p.ok())                 # not an hour yet
+            now[0] = 3600
+            line = p.ok()
+            self.assertIn("5 events sent (4 new, 1 rejected) and 1 status reports in the last 60 min", line)
+            self.assertIsNone(p.ok())                 # counters start again
+        finally:
+            agent.log = orig
+        self.assertEqual(len(logged), 1)
+
+    def test_summary_right_after_recovery(self):
+        now = [100.0]
+        p = agent.Progress(clock=lambda: now[0])
+        orig, agent.log = agent.log, lambda m: None
+        try:
+            p.failed()
+            p.failed()
+            now[0] = 400
+            p.events({"received": 3, "inserted": 3, "rejected": 0})
+            line = p.ok()
+        finally:
+            agent.log = orig
+        self.assertTrue(line.startswith("connection back after 2 failed attempt(s); summary: 3 events sent"))
+
+    def test_network_errors_retry_within_a_minute(self):
+        import urllib.error
+        net = urllib.error.URLError("Network is unreachable")
+        self.assertEqual(agent.retry_wait(net, 3600, 60), 60)
+        self.assertEqual(agent.retry_wait(TimeoutError(), 960, 30), 30)
+        http = urllib.error.HTTPError("http://x", 503, "busy", {}, None)
+        self.assertEqual(agent.retry_wait(http, 960, 60), 1920)
+        self.assertEqual(agent.retry_wait(http, 3600, 60), 3600)
+
+    def test_service_waits_for_the_network(self):
+        unit = (Path(__file__).resolve().parent.parent / "wdx-agent.service").read_text()
+        self.assertIn("After=network-online.target", unit)
+        self.assertIn("Wants=network-online.target", unit)
+
+
 class StatusAndPickup(unittest.TestCase):
     def test_status_record_and_cursor_helpers(self):
         tmp = tempfile.mkdtemp()
