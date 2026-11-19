@@ -1,5 +1,10 @@
 # Changelog
 
+## Installer (2026-11-20)
+
+- Re-running `install.sh` to update now restarts the agent when it is already running, so the new version takes over (before, the old version kept running until a reboot). It ends by printing the version that is running.
+- The installer no longer replaces a `wdx-agent.service` set up by something else, such as a Wildlife Network Base; it only writes the file when it is missing or is the installer's own.
+
 ## 0.4.5 (2026-11-19)
 
 - The log now shows that uploads work: once an hour, and right after the first success following a network failure, an info line sums up events sent (new and rejected) and status reports sent since the last one.

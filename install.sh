@@ -97,9 +97,43 @@ case "$CODE" in
   000) echo "Could not reach $BASE. Check the internet connection; the agent will keep trying once it is running." ;;
 esac
 
-curl -fsSL "$BASE/agent/wdx-agent.service" | sed "s/__USER__/$RUN_USER/" | sudo tee /etc/systemd/system/wdx-agent.service >/dev/null
+# The service file is only written when it is missing or is our own stock file (the only past change was the name in
+# Description). A file set up by something else, such as a Wildlife Network Base, has extra settings and is kept.
+UNIT=/etc/systemd/system/wdx-agent.service
+NEW_UNIT="$(curl -fsSL "$BASE/agent/wdx-agent.service" | sed "s/__USER__/$RUN_USER/")"
+stock() { sed 's/^Description=wdx-agent: push wildlife detections to WildNetwork$/Description=wdx-agent: push wildlife detections to Wildlife Network/' "$1"; }
+if [ ! -f "$UNIT" ] || [ "$(stock "$UNIT")" = "$NEW_UNIT" ]; then
+  printf '%s\n' "$NEW_UNIT" | sudo tee "$UNIT" >/dev/null
+else
+  say "Keeping the existing $UNIT (it has settings of its own)"
+fi
 sudo systemctl daemon-reload
-sudo systemctl enable --now wdx-agent
+# enable --now does not restart a service that is already running, so an update would leave the old version running.
+STARTED="$(date '+%Y-%m-%d %H:%M:%S')"
+if systemctl is-active --quiet wdx-agent; then
+  say "Restarting wdx-agent to run the new version"
+  sudo systemctl enable wdx-agent >/dev/null 2>&1 || true
+  sudo systemctl restart wdx-agent
+else
+  sudo systemctl enable --now wdx-agent
+fi
+
+# The agent logs its version when it starts; give it a few seconds.
+RUNNING=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  RUNNING="$(sudo journalctl -u wdx-agent --since "$STARTED" -o cat --no-pager 2>/dev/null | sed -n 's/^.*wdx-agent \([0-9][0-9.]*\) source=.*$/\1/p' | tail -1)"
+  [ -n "$RUNNING" ] && break
+  sleep 1
+done
+INSTALLED="$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' /opt/wdx-agent/wdx_agent.py | head -1)"
+if [ -n "$RUNNING" ]; then
+  say "wdx-agent $RUNNING is running"
+  [ "$RUNNING" = "$INSTALLED" ] || echo "Warning: $INSTALLED is installed but $RUNNING is running. Run: sudo systemctl restart wdx-agent"
+elif systemctl is-active --quiet wdx-agent; then
+  say "wdx-agent $INSTALLED installed and running"
+else
+  echo "wdx-agent $INSTALLED is installed but the service is not running yet. Check: systemctl status wdx-agent"
+fi
 
 say "Done. Your detections will appear on $BASE within a minute or two."
 echo "Logs:   journalctl -u wdx-agent -f"
