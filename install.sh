@@ -56,6 +56,9 @@ sudo curl -fsSL "$BASE/agent/wdx_agent.py" -o /opt/wdx-agent/wdx_agent.py
 sudo chmod 755 /opt/wdx-agent/wdx_agent.py
 
 if [ ! -f "$CONF" ]; then
+  # An empty "latitude =" cannot be read as a number, so leave the lines commented out when none are given.
+  LAT_LINE="latitude = ${WDX_LAT:-}"; [ -n "${WDX_LAT:-}" ] || LAT_LINE="# latitude = "
+  LON_LINE="longitude = ${WDX_LON:-}"; [ -n "${WDX_LON:-}" ] || LON_LINE="# longitude = "
   sudo tee "$CONF" >/dev/null <<INI
 [agent]
 endpoint = $BASE/api/v1/events
@@ -65,8 +68,8 @@ path = $DBPATH
 station_name = $NAME
 device_id = ${WDX_DEVICE_ID:-}
 # Used only when the detection database has no coordinates.
-latitude = ${WDX_LAT:-}
-longitude = ${WDX_LON:-}
+$LAT_LINE
+$LON_LINE
 # Coordinates are rounded before leaving this device. 2 decimals is about 1 km; use 1 for about 11 km.
 round_coords = 2
 min_confidence = 0.7
@@ -109,7 +112,8 @@ else
 fi
 sudo systemctl daemon-reload
 # enable --now does not restart a service that is already running, so an update would leave the old version running.
-STARTED="$(date '+%Y-%m-%d %H:%M:%S')"
+# Clear a failed state (or systemd's start limit after several quick restarts) so the start below is not refused.
+sudo systemctl reset-failed wdx-agent >/dev/null 2>&1 || true
 if systemctl is-active --quiet wdx-agent; then
   say "Restarting wdx-agent to run the new version"
   sudo systemctl enable wdx-agent >/dev/null 2>&1 || true
@@ -118,10 +122,11 @@ else
   sudo systemctl enable --now wdx-agent
 fi
 
-# The agent logs its version when it starts; give it a few seconds.
+# The agent logs its version when it starts; read it from this run of the service only, giving it a few seconds.
 RUNNING=""
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  RUNNING="$(sudo journalctl -u wdx-agent --since "$STARTED" -o cat --no-pager 2>/dev/null | sed -n 's/^.*wdx-agent \([0-9][0-9.]*\) source=.*$/\1/p' | tail -1)"
+  INV="$(systemctl show -p InvocationID --value wdx-agent 2>/dev/null)"
+  [ -n "$INV" ] && RUNNING="$(sudo journalctl "_SYSTEMD_INVOCATION_ID=$INV" -o cat --no-pager 2>/dev/null | sed -n 's/^.*wdx-agent \([0-9][0-9.]*\) source=.*$/\1/p' | tail -1)"
   [ -n "$RUNNING" ] && break
   sleep 1
 done

@@ -4,6 +4,8 @@
 
 - Re-running `install.sh` to update now restarts the agent when it is already running, so the new version takes over (before, the old version kept running until a reboot). It ends by printing the version that is running.
 - The installer no longer replaces a `wdx-agent.service` set up by something else, such as a Wildlife Network Base; it only writes the file when it is missing or is the installer's own.
+- A fresh install without `WDX_LAT`/`WDX_LON` no longer fails its own check: the empty `latitude =` and `longitude =` lines (which cannot be read as numbers) are now written commented out.
+- A service stuck in a failed state, or at systemd's start limit after several quick restarts, is reset before the installer starts it.
 
 ## 0.4.5 (2026-11-19)
 
