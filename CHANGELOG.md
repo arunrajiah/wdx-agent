@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6 (2026-11-20)
+
+- BirdNET-Go, older `notes` datastore: new key `notes_zone_before` (`<id> <zone>` pairs) for rows written before a change of time zone, so a detection still waiting to be sent when the zone changes keeps its true time. The Wildlife Network Base sets it when it switches from UTC to the station's own zone. The newer `detections` datastore needs nothing: its times are Unix timestamps and stay correct in any zone (now covered by tests in UTC, India and New York time).
+
 ## Installer (2026-11-20)
 
 - Re-running `install.sh` to update now restarts the agent when it is already running, so the new version takes over (before, the old version kept running until a reboot). It ends by printing the version that is running.

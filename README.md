@@ -93,6 +93,8 @@ curl -fsSL https://wlnw.org/agent/install.sh | WDX_SOURCE=birdnet-go WDX_PATH=/p
 
 The agent reads both BirdNET-Go datastores: the newer one (`detections` table) and the older one (`notes` table). It checks which one it has at start; for a layout it does not know it logs one warning and sends nothing, so update the agent when BirdNET-Go changes its database. After BirdNET-Go migrates an old database, detections that were already sent keep their ids, so nothing is counted twice. Detections BirdNET-Go marks as unlikely for your location, and non-species labels such as noise, are skipped.
 
+Event times are sent as true UTC instants. The newer datastore stores each detection as a Unix timestamp, so the time zone of the computer or of BirdNET-Go makes no difference. The older `notes` datastore stores the local date and time of BirdNET-Go's container; the agent reads them in this computer's time zone, so keep both on the same zone (BirdNET-Go's installer sets the container's `TZ` from the host). If the zone changes while detections are still waiting to be sent, `notes_zone_before` tells the agent which zone the earlier rows were written in.
+
 ### Camera trap with SpeciesNet
 
 **Hardware:** any trail camera. Copy images from the SD card to a computer or Pi, or use a cellular camera that uploads to a folder.
@@ -267,6 +269,7 @@ Then install [wdx-agent.service](wdx-agent.service) into `/etc/systemd/system/`,
 | `min_detection` | `0.2` | `megadetector` only: lowest MegaDetector box score that counts. |
 | `api_token` | empty | `frigate` only: bearer token for Frigate's authenticated port. |
 | `filename_timezone` | `utc` | `batdetect2` only: `utc` or `local`, for the time in recording file names. |
+| `notes_zone_before` | empty | BirdNET-Go `notes` datastore only: `<id> <zone>` pairs, comma separated (for example `1520 Etc/UTC`). Rows up to that id were written in that time zone instead of the local one. The Wildlife Network Base sets it when it changes its own time zone. |
 | `interval_seconds` | `60` | How often to look for new detections. |
 | `media_base_url` | empty | If your clips are publicly reachable, the URL prefix to link them. |
 | `license` | CC BY 4.0 | License you grant on the detections you share. |

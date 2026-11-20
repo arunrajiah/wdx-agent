@@ -3,7 +3,10 @@ import os
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -139,6 +142,100 @@ class BirdNetGoLayouts(unittest.TestCase):
         self.assertEqual(len(logged), 1)
         self.assertIn("layout not recognised", logged[0])
         self.assertIn("observations", logged[0])
+
+
+@contextmanager
+def local_zone(zone: str):
+    """Run with this host time zone, as after `timedatectl set-timezone` and an agent restart."""
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = zone
+    time.tzset()
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old
+        time.tzset()
+
+
+def instant(iso: str) -> datetime:
+    return datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+# A detection on a Base in India: 2026-11-20 10:51:34 UTC = 16:21:34 IST (seen in production).
+UTC_INSTANT = datetime(2026, 11, 20, 10, 51, 34, tzinfo=timezone.utc)
+
+
+def notes_db(tmp: str, rows) -> str:
+    db = f"{tmp}/birdnet.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, date TEXT, time TEXT, scientific_name TEXT, common_name TEXT, "
+                "confidence REAL, latitude REAL, longitude REAL, clip_name TEXT)")
+    con.executemany("INSERT INTO notes (id,date,time,scientific_name,common_name,confidence,latitude,longitude,clip_name) "
+                    "VALUES (?,?,?,'Psittacula krameri','Rose-ringed Parakeet',0.9,13.08,80.27,NULL)", rows)
+    con.commit()
+    con.close()
+    return db
+
+
+class TimeZoneChange(unittest.TestCase):
+    """Event times stay true UTC instants when the Base moves from Etc/UTC to its local zone (Asia/Kolkata)."""
+
+    def test_detections_layout_is_the_same_instant_in_any_zone(self):
+        tmp = tempfile.mkdtemp()
+        db = f"{tmp}/birdnet.db"
+        con = sqlite3.connect(db)
+        con.executescript(
+            "CREATE TABLE ai_models (id INTEGER PRIMARY KEY, name TEXT, version TEXT);"
+            "CREATE TABLE labels (id INTEGER PRIMARY KEY, scientific_name TEXT, model_id INTEGER, label_type_id INTEGER);"
+            "CREATE TABLE detections (id INTEGER PRIMARY KEY, model_id INTEGER, label_id INTEGER, detected_at INTEGER, confidence REAL,"
+            " latitude REAL, longitude REAL, clip_name TEXT, unlikely NUMERIC DEFAULT 0, legacy_id INTEGER);"
+            "INSERT INTO ai_models VALUES (1, 'BirdNET', '2.4');"
+            "INSERT INTO labels VALUES (1, 'Psittacula krameri', 1, 1);"
+            f"INSERT INTO detections VALUES (1, 1, 1, {int(UTC_INSTANT.timestamp())}, 0.9, 13.08, 80.27,"
+            " 'clips/Psittacula_krameri_90p_20261120T162134Z.wav', 0, NULL);"
+        )
+        con.close()
+        s = settings(tmp, "birdnet-go", db)
+        seen = []
+        for zone in ("Etc/UTC", "Asia/Kolkata", "America/New_York"):
+            with local_zone(zone):
+                _, ev = next(agent.read_birdnet_go(s, None))
+                seen.append(ev["eventStart"])
+        self.assertEqual(seen, ["2026-11-20T10:51:34Z"] * 3)   # detected_at is Unix seconds: no shift
+
+    def test_notes_layout_reads_wall_time_in_the_local_zone(self):
+        tmp = tempfile.mkdtemp()
+        with local_zone("Etc/UTC"):   # before: host and BirdNET-Go both on UTC
+            db = notes_db(tmp, [(1, "2026-11-20", "10:51:34")])
+            _, ev = next(agent.read_birdnet_go(settings(tmp, "birdnet-go", db), None))
+            self.assertEqual(instant(ev["eventStart"]), UTC_INSTANT)
+        tmp = tempfile.mkdtemp()
+        with local_zone("Asia/Kolkata"):   # after: both on IST, BirdNET-Go writes 16:21:34
+            db = notes_db(tmp, [(1, "2026-11-20", "16:21:34")])
+            _, ev = next(agent.read_birdnet_go(settings(tmp, "birdnet-go", db), None))
+            self.assertEqual(ev["eventStart"], "2026-11-20T16:21:34+05:30")
+            self.assertEqual(instant(ev["eventStart"]), UTC_INSTANT)
+
+    def test_notes_written_before_the_change_keep_their_zone(self):
+        tmp = tempfile.mkdtemp()
+        # Row 1 was written while BirdNET-Go ran on UTC and not sent yet; row 2 ten minutes later, on IST.
+        db = notes_db(tmp, [(1, "2026-11-20", "10:51:34"), (2, "2026-11-20", "16:31:34")])
+        with local_zone("Asia/Kolkata"):
+            plain = [ev["eventStart"] for _, ev in agent.read_birdnet_go(settings(tmp, "birdnet-go", db), None)]
+            self.assertEqual(instant(plain[0]), datetime(2026, 11, 20, 5, 21, 34, tzinfo=timezone.utc))  # 5.5 h early
+            s = settings(tmp, "birdnet-go", db, "notes_zone_before = 1 Etc/UTC\n")
+            out = list(agent.read_birdnet_go(s, None))
+        self.assertEqual([c for c, _ in out], [1, 2])   # same cursor: nothing sent twice or skipped
+        self.assertEqual([instant(e["eventStart"]) for _, e in out],
+                         [UTC_INSTANT, datetime(2026, 11, 20, 11, 1, 34, tzinfo=timezone.utc)])
+
+    def test_zone_boundaries_parse(self):
+        b = agent.parse_zone_boundaries("300 Asia/Kolkata, 120 Etc/UTC, x y, 5 Not/AZone")
+        self.assertEqual([(i, str(z)) for i, z in b], [(120, "Etc/UTC"), (300, "Asia/Kolkata")])
+        self.assertEqual(agent.parse_zone_boundaries(""), [])
 
 
 class TestStation(unittest.TestCase):

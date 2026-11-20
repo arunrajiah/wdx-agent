@@ -36,8 +36,9 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-VERSION = "0.4.5"
+VERSION = "0.4.6"
 BATCH = 500
 
 
@@ -49,6 +50,30 @@ def local_iso(date: str, clock: str) -> str:
     """Device-local 'YYYY-MM-DD' + 'HH:MM:SS' to ISO 8601 with the local UTC offset for that date."""
     dt = datetime.strptime(f"{date} {clock.split('.')[0]}", "%Y-%m-%d %H:%M:%S")
     return dt.astimezone().isoformat(timespec="seconds")
+
+
+def parse_zone_boundaries(text: str) -> list:
+    """`notes_zone_before`: "<id> <zone>" pairs separated by commas, e.g. "1520 Etc/UTC". Rows of BirdNET-Go's older
+    `notes` layout carry wall-clock date and time in the container's time zone; when that zone changes, the rows up
+    to <id> were written in <zone>, not in the current local zone. Unreadable pairs are ignored."""
+    out = []
+    for part in (text or "").split(","):
+        bits = part.split()
+        if len(bits) == 2 and bits[0].isdigit():
+            try:
+                out.append((int(bits[0]), ZoneInfo(bits[1])))
+            except (ZoneInfoNotFoundError, ValueError):
+                log(f"WARNING: notes_zone_before: unknown time zone {bits[1]!r}, ignored")
+    return sorted(out, key=lambda b: b[0])
+
+
+def notes_iso(s, rid: int, date: str, clock: str) -> str:
+    """Event time of a BirdNET-Go `notes` row: local wall time, or the zone it was written in (notes_zone_before)."""
+    for last, zone in getattr(s, "notes_zones", []):
+        if rid <= last:
+            dt = datetime.strptime(f"{date} {clock.split('.')[0]}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=zone)
+            return dt.isoformat(timespec="seconds")
+    return local_iso(date, clock)
 
 
 class Settings:
@@ -82,6 +107,8 @@ class Settings:
         self.classifier_version = a.get("classifier_version", "unknown")
         # Recorders such as AudioMoth put the start time in the file name, in UTC unless configured otherwise.
         self.filename_timezone = a.get("filename_timezone", "utc").lower()
+        # BirdNET-Go `notes` rows written before a time zone change (set by the Wildlife Network Base).
+        self.notes_zones = parse_zone_boundaries(a.get("notes_zone_before", ""))
         self.min_calls = a.getint("min_calls", fallback=2)
         # Camera sources: species_map CSV (label,scientific name), Frigate API token, MegaDetector detection threshold.
         self.species_map = a.get("species_map", "")
@@ -176,7 +203,10 @@ def birdnet_go_layout(tables: set) -> str | None:
 def read_birdnet_go(s: Settings, cursor):
     """BirdNET-Go. Older versions keep a `notes` table (cursor = note id). Current versions keep `detections` joined to
     `labels` and `ai_models` (cursor = {"d": detection id}); migrated rows keep their note id as legacy_id, so their
-    eventIds match what was sent before the upgrade and the server deduplicates them."""
+    eventIds match what was sent before the upgrade and the server deduplicates them.
+    Times: `detected_at` is Unix seconds, a true UTC instant whatever the time zone. `notes` keeps wall-clock date and
+    time in BirdNET-Go's (container's) time zone, read here in this host's zone, so both must be the same zone
+    (notes_zone_before covers rows written before a change of zone)."""
     db = sqlite3.connect(f"file:{s.path}?mode=ro", uri=True, timeout=10)
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     layout = birdnet_go_layout(tables)
@@ -226,7 +256,7 @@ def read_birdnet_go(s: Settings, cursor):
         dep = deployment(s, lat, lon, "acoustic-recorder", "BirdNET-Go")
         if dep is None:
             sys.exit("no coordinates: set latitude/longitude in the config")
-        ev = base_event(s, f"{s.source}:{s.station_id}:{rid}", local_iso(date, clock), dep, str(rid))
+        ev = base_event(s, f"{s.source}:{s.station_id}:{rid}", notes_iso(s, rid, date, clock), dep, str(rid))
         ev["detection"] = {"scientificName": sci, "vernacularName": com, "taxonRank": "species",
                            "confidence": float(conf), "classifier": {"name": "BirdNET", "version": "unknown"}}
         if clip:
