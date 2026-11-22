@@ -15,17 +15,30 @@ say() { printf '\033[1;36m%s\033[0m\n' "$*"; }
 command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
 
 SOURCE="${WDX_SOURCE:-}"; DBPATH="${WDX_PATH:-}"
-if [ -z "$SOURCE" ]; then
-  for p in "$HOME_DIR/BirdNET-Pi/scripts/birds.db" /home/*/BirdNET-Pi/scripts/birds.db; do
-    [ -f "$p" ] && { SOURCE=birdnet-pi; DBPATH="$p"; break; }
-  done
+# First match of a database file: the usual install folders, then a wider search (Docker volumes, NAS shares, /opt).
+find_db() {
+  local name="$1"; shift
+  for p in "$@"; do [ -f "$p" ] && { echo "$p"; return; }; done
+  local roots=""; for r in /home /root /opt /srv /data /mnt /media /var/lib/docker/volumes; do [ -d "$r" ] && roots="$roots $r"; done
+  [ -n "$roots" ] || return 0
+  { find $roots -maxdepth 6 -type f -name "$name" 2>/dev/null || sudo -n find $roots -maxdepth 6 -type f -name "$name" 2>/dev/null; } | grep -v '/proc/' | head -1 || true
+}
+if [ -z "$DBPATH" ] && { [ -z "$SOURCE" ] || [ "$SOURCE" = birdnet-pi ]; }; then
+  p="$(find_db birds.db "$HOME_DIR/BirdNET-Pi/scripts/birds.db" /home/*/BirdNET-Pi/scripts/birds.db)"
+  [ -n "$p" ] && { SOURCE=birdnet-pi; DBPATH="$p"; }
 fi
-if [ -z "$SOURCE" ]; then
-  for p in "$HOME_DIR/birdnet-go-app/data/birdnet.db" "$HOME_DIR/birdnet-go/birdnet.db" /data/birdnet.db /home/*/birdnet-go-app/data/birdnet.db; do
-    [ -f "$p" ] && { SOURCE=birdnet-go; DBPATH="$p"; break; }
-  done
+if [ -z "$DBPATH" ] && { [ -z "$SOURCE" ] || [ "$SOURCE" = birdnet-go ]; }; then
+  p="$(find_db birdnet.db "$HOME_DIR/birdnet-go-app/data/birdnet.db" "$HOME_DIR/birdnet-go/birdnet.db" /data/birdnet.db /home/*/birdnet-go-app/data/birdnet.db)"
+  [ -n "$p" ] && { SOURCE=birdnet-go; DBPATH="$p"; }
 fi
-[ -n "$SOURCE" ] || { echo "No BirdNET-Pi or BirdNET-Go database found. Re-run with WDX_SOURCE and WDX_PATH set (sources: birdnet-pi, birdnet-go, speciesnet, megadetector, frigate, batdetect2, csv, ndjson)."; exit 1; }
+if [ -z "$SOURCE" ] || { [ -z "$DBPATH" ] && { [ "$SOURCE" = birdnet-pi ] || [ "$SOURCE" = birdnet-go ]; }; }; then
+  echo "No ${SOURCE:-BirdNET-Pi or BirdNET-Go} database found on this computer."
+  echo "Run this installer on the computer that runs BirdNET (not your phone or laptop)."
+  echo "If BirdNET-Go keeps its data somewhere else (for example a Docker volume or a NAS share), find the file with:"
+  echo "  sudo find / -name birdnet.db 2>/dev/null"
+  echo "and run the installer again with WDX_PATH=<that path> in front of bash. More help: $BASE/contribute"
+  exit 1
+fi
 say "Found $SOURCE at $DBPATH"
 
 NAME="${WDX_NAME:-$(hostname)}"

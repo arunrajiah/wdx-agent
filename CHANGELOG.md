@@ -1,5 +1,11 @@
 # Changelog
 
+## Installer (2026-11-22)
+
+- Finds the BirdNET database in more places: besides the usual install folders it now searches /home, /opt, /srv, /data, /mnt, /media and Docker volumes, so BirdNET-Go set up in Docker or on a NAS is found without `WDX_PATH`.
+- `WDX_SOURCE=birdnet-go` (or `birdnet-pi`) without `WDX_PATH` now searches for that database instead of stopping.
+- When no database is found, the message says to run the installer on the computer that runs BirdNET and shows how to find the file.
+
 ## 0.4.6 (2026-11-20)
 
 - BirdNET-Go, older `notes` datastore: new key `notes_zone_before` (`<id> <zone>` pairs) for rows written before a change of time zone, so a detection still waiting to be sent when the zone changes keeps its true time. The Wildlife Network Base sets it when it switches from UTC to the station's own zone. The newer `detections` datastore needs nothing: its times are Unix timestamps and stay correct in any zone (now covered by tests in UTC, India and New York time).
