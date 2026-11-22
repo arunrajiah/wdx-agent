@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.8 (2026-11-22)
+
+- Catches up much faster when many rows are skipped. The agent only went straight on to the next batch when the last one sent 500 detections; a batch of mostly skipped rows (below `min_confidence`, unlikely for the location, or before `start_after`) made it wait a whole interval. A station that installs the agent with `start_after` and a large history now reaches new detections in seconds or minutes instead of hours.
+
 ## 0.4.7 (2026-11-22)
 
 - New `start_after` setting (ISO time): detections at or before it are skipped, and the cursor still moves past them. The installer sets it from `WDX_START_AFTER`, and `station_id` from `WDX_STATION_ID`. BirdEcho passes both when its phone already shared the station's detections, so installing the agent afterwards does not send them a second time.
