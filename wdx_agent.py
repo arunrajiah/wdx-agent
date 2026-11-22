@@ -38,7 +38,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-VERSION = "0.4.7"
+VERSION = "0.4.8"
 BATCH = 500
 
 
@@ -743,6 +743,7 @@ def pending_batch(s: Settings) -> list:
 
 
 def run_once(s: Settings, dry: bool) -> int:
+    """Sends one batch. Returns the rows read (BATCH or more: keep draining); 0 when nothing was sent."""
     batch = pending_batch(s)
     if not batch:
         return 0
@@ -763,7 +764,9 @@ def run_once(s: Settings, dry: bool) -> int:
         return 0
     # The cursor only advances after the server accepted the batch, so an offline Pi just catches up later.
     save_cursor(s, batch[-1][0])
-    return len(events)
+    # Rows read, not events sent: a full batch means more rows may be waiting, even when most were skipped (below the
+    # threshold, unlikely, or before start_after), so the main loop keeps reading instead of waiting a whole interval.
+    return len(batch)
 
 
 SUMMARY_EVERY = 3600     # seconds between "sent so far" lines in the log

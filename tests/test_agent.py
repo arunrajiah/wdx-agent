@@ -238,6 +238,17 @@ class TimeZoneChange(unittest.TestCase):
         self.assertEqual(agent.parse_zone_boundaries(""), [])
 
 
+class DrainSkipped(unittest.TestCase):
+    def test_full_batch_of_skipped_rows_keeps_draining(self):
+        # Every row is before start_after: nothing is sent, the cursor moves, and the loop is told to read on.
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [(i, "2026-01-01", "06:00:00") for i in range(1, agent.BATCH + 51)]
+            s = settings(tmp, "birdnet-go", notes_db(tmp, rows), "latitude = 13.08\nlongitude = 80.27\nstart_after = 2026-06-01T00:00:00Z\n")
+            self.assertEqual(agent.run_once(s, False), agent.BATCH)
+            self.assertEqual(agent.run_once(s, False), 50)
+            self.assertEqual(agent.run_once(s, False), 0)
+
+
 class TestStation(unittest.TestCase):
     def test_test_flag_only_when_on(self):
         tmp = tempfile.mkdtemp()
