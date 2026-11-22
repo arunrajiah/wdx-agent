@@ -38,7 +38,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-VERSION = "0.4.6"
+VERSION = "0.4.7"
 BATCH = 500
 
 
@@ -98,6 +98,9 @@ class Settings:
         self.license = a.get("license", "https://creativecommons.org/licenses/by/4.0/")
         # Test station: every event carries "test": true and the server keeps it off the public map.
         self.test = a.getboolean("test", fallback=False)
+        # Detections at or before this time are skipped (cursor still moves): set by the installer when the BirdEcho app
+        # already shared this station's detections from a phone, so they are not sent a second time.
+        self.start_after = parse_start_after(a.get("start_after", ""))
         self.state_path = os.path.expanduser(a.get("state_file", "~/.wdx-agent-state.json"))
         # What the server sees as source.system. The csv source is generic, so it reports "other" unless told otherwise.
         self.system = a.get("system", "") or ("other" if self.source == "csv" else self.source)
@@ -122,6 +125,30 @@ class Settings:
         self.status_interval = a.getint("status_interval_seconds", fallback=900)
         # Optional command printing JSON such as {"percent": 81, "volts": 13.1, "charging": true} (hardware specific).
         self.battery_command = a.get("battery_command", "")
+
+
+def parse_start_after(v: str):
+    """ISO time (with zone, or UTC when none) to an aware datetime, or None when empty or unreadable."""
+    v = (v or "").strip()
+    if not v:
+        return None
+    try:
+        t = datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        log(f"WARNING: start_after {v!r} is not an ISO time; ignored")
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def after_start(s: "Settings", ev: dict) -> bool:
+    """False for an event at or before start_after (already shared another way)."""
+    if s.start_after is None:
+        return True
+    try:
+        t = datetime.fromisoformat(str(ev.get("eventStart", "")).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)) > s.start_after
 
 
 def default_station_id() -> str:
@@ -719,7 +746,8 @@ def run_once(s: Settings, dry: bool) -> int:
     batch = pending_batch(s)
     if not batch:
         return 0
-    events = [e for _, e in batch if e is not None]  # None marks a row that was skipped but still moves the cursor
+    # None marks a row that was skipped but still moves the cursor; so do rows at or before start_after.
+    events = [e for _, e in batch if e is not None and after_start(s, e)]
     if dry:
         for e in events[:5]:
             print(json.dumps(e, indent=2))

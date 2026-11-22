@@ -521,3 +521,20 @@ class Versions(unittest.TestCase):
         self.assertTrue(w.newer("0.5.0", "0.4.3"))
         self.assertFalse(w.newer("0.4.3", "0.4.3"))
         self.assertFalse(w.newer("0.4.2", "0.4.3"))
+
+
+class StartAfter(unittest.TestCase):
+    def test_skips_events_already_shared_from_a_phone(self):
+        tmp = tempfile.mkdtemp()
+        s = settings(tmp, "ndjson", os.path.join(tmp, "x.ndjson"), "start_after = 2026-11-22T10:00:00+05:30\n")
+        self.assertEqual(s.start_after, datetime(2026, 11, 22, 4, 30, tzinfo=timezone.utc))
+        self.assertFalse(agent.after_start(s, {"eventStart": "2026-11-22T04:30:00Z"}))
+        self.assertFalse(agent.after_start(s, {"eventStart": "2026-11-22T09:59:00+05:30"}))
+        self.assertTrue(agent.after_start(s, {"eventStart": "2026-11-22T04:30:01Z"}))
+
+    def test_empty_or_bad_value_sends_everything(self):
+        tmp = tempfile.mkdtemp()
+        self.assertIsNone(settings(tmp, "ndjson", "x", "").start_after)
+        s = settings(tmp, "ndjson", "x", "start_after = soon\n")
+        self.assertIsNone(s.start_after)
+        self.assertTrue(agent.after_start(s, {"eventStart": "2020-01-01T00:00:00Z"}))

@@ -3,7 +3,9 @@
 #   curl -fsSL https://wlnw.org/agent/install.sh | bash
 # Detects BirdNET-Pi or BirdNET-Go, registers a device key, and installs a systemd service.
 # Override anything with env vars: WDX_SOURCE, WDX_PATH, WDX_LAT, WDX_LON, WDX_NAME, WDX_KEY, WDX_BASE,
-# WDX_DEVICE_ID (from BirdEcho or the device registry: turns on health reports, so the app can show it is sending).
+# WDX_DEVICE_ID (from BirdEcho or the device registry: turns on health reports, so the app can show it is sending),
+# WDX_STATION_ID and WDX_START_AFTER (from BirdEcho when its phone already shared this station: same station, and
+# detections up to that time are not sent again).
 set -euo pipefail
 
 BASE="${WDX_BASE:-https://wlnw.org}"
@@ -80,6 +82,8 @@ source = $SOURCE
 path = $DBPATH
 station_name = $NAME
 device_id = ${WDX_DEVICE_ID:-}
+${WDX_STATION_ID:+station_id = $WDX_STATION_ID}
+${WDX_START_AFTER:+start_after = $WDX_START_AFTER}
 # Used only when the detection database has no coordinates.
 $LAT_LINE
 $LON_LINE
@@ -97,6 +101,11 @@ else
     if sudo grep -q "^device_id *=" "$CONF"; then sudo sed -i "s|^device_id *=.*|device_id = $WDX_DEVICE_ID|" "$CONF"
     else echo "device_id = $WDX_DEVICE_ID" | sudo tee -a "$CONF" >/dev/null; fi
   fi
+  for kv in "station_id=${WDX_STATION_ID:-}" "start_after=${WDX_START_AFTER:-}"; do
+    k="${kv%%=*}"; v="${kv#*=}"; [ -n "$v" ] || continue
+    if sudo grep -q "^$k *=" "$CONF"; then sudo sed -i "s|^$k *=.*|$k = $v|" "$CONF"
+    else echo "$k = $v" | sudo tee -a "$CONF" >/dev/null; fi
+  done
 fi
 sudo mkdir -p /var/lib/wdx-agent && sudo chown "$RUN_USER" /var/lib/wdx-agent
 

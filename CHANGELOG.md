@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.7 (2026-11-22)
+
+- New `start_after` setting (ISO time): detections at or before it are skipped, and the cursor still moves past them. The installer sets it from `WDX_START_AFTER`, and `station_id` from `WDX_STATION_ID`. BirdEcho passes both when its phone already shared the station's detections, so installing the agent afterwards does not send them a second time.
+
 ## Installer (2026-11-22)
 
 - Finds the BirdNET database in more places: besides the usual install folders it now searches /home, /opt, /srv, /data, /mnt, /media and Docker volumes, so BirdNET-Go set up in Docker or on a NAS is found without `WDX_PATH`.
